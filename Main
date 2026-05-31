@@ -4858,6 +4858,77 @@ function installHatchActions()
         return lines
     end
 
+    local function buffKindForEntry(entry)
+        local lowerName = tostring(entry and entry.Name or ""):lower()
+        for _, instance in ipairs(entry and entry.Instances or {}) do
+            lowerName = lowerName .. " " .. getAttributeText(instance)
+        end
+
+        if lowerName:find("seal", 1, true) then
+            return "Seal"
+        end
+        if lowerName:find("koi", 1, true) then
+            return "Koi"
+        end
+        if lowerName:find("bronto", 1, true) or lowerName:find("brontosaurus", 1, true) then
+            return "Bronto"
+        end
+
+        return nil
+    end
+
+    local function activePlacedPetEntries()
+        local entries = {}
+        local seen = {}
+        local petsPhysical = Workspace:FindFirstChild("PetsPhysical")
+        local petMover = petsPhysical and petsPhysical:FindFirstChild("PetMover")
+        if not petMover then
+            return entries
+        end
+
+        for _, petModel in ipairs(petMover:GetChildren()) do
+            local uuid = getInstanceUuid(petModel)
+            if uuid and isLocalPlacedPet(petModel, uuid) then
+                local key = uuidCacheKey(uuid)
+                if not seen[key] then
+                    seen[key] = true
+                    entries[#entries + 1] = {
+                        Name = getPhysicalPetDisplayName(petModel, uuid),
+                        Instances = {petModel},
+                        UUIDs = {uuid},
+                    }
+                end
+            end
+        end
+
+        return entries
+    end
+
+    local function applyBuffTotals(entry, totals)
+        local kind = buffKindForEntry(entry)
+        if kind == "Seal" then
+            local value = readBuffPercent(entry, {"sell", "refund", "eggback", "chance", "percent"}, nil)
+            if value then
+                totals.SellRefund = totals.SellRefund + value
+                return true
+            end
+        elseif kind == "Koi" then
+            local value = readBuffPercent(entry, {"hatch", "refund", "eggback", "chance", "percent"}, nil)
+            if value then
+                totals.HatchRefund = totals.HatchRefund + value
+                return true
+            end
+        elseif kind == "Bronto" then
+            local value = readBuffPercent(entry, {"hatch", "size", "boost", "percent"}, 30)
+            if value then
+                totals.SizeBoost = totals.SizeBoost + value
+                return true
+            end
+        end
+
+        return false
+    end
+
     local function currentPlacedEggCount()
         return #collectPhysicalEggObjects()
     end
@@ -4976,9 +5047,36 @@ function installHatchActions()
 
     function Actions.LogSelectedHatchBuffs()
         local lines = {}
-        local sellRefundTotal = 0
-        local hatchRefundTotal = 0
-        local sizeBoostTotal = 0
+        local totals = {
+            SellRefund = 0,
+            HatchRefund = 0,
+            SizeBoost = 0,
+        }
+        local seenEntries = {}
+
+        local function addEntry(entry, source)
+            if not entry then
+                return
+            end
+
+            local key = entryUuidKey(entry) or tostring(entry)
+            if seenEntries[key] then
+                return
+            end
+            seenEntries[key] = true
+
+            for _, line in ipairs(collectPetBuffLines(entry)) do
+                lines[#lines + 1] = source .. " | " .. line
+            end
+
+            if applyBuffTotals(entry, totals) then
+                lines[#lines + 1] = ("%s | active buff source = %s"):format(source, tostring(entry.Name))
+            end
+        end
+
+        for _, entry in ipairs(activePlacedPetEntries()) do
+            addEntry(entry, "Equipped")
+        end
 
         for _, selected in ipairs({
             Config.Hatch.EggReductionPets,
@@ -4986,39 +5084,35 @@ function installHatchActions()
             Config.Hatch.SealPets,
         }) do
             for _, entry in ipairs(selectedPetEntries(selected)) do
-                for _, line in ipairs(collectPetBuffLines(entry)) do
-                    lines[#lines + 1] = line
-                end
-
-                local lowerName = tostring(entry.Name or ""):lower()
-                for _, instance in ipairs(entry.Instances or {}) do
-                    lowerName = lowerName .. " " .. getAttributeText(instance)
-                end
-                if lowerName:find("seal", 1, true) then
-                    sellRefundTotal = sellRefundTotal + (readBuffPercent(entry, {"seal", "sell", "refund", "eggback"}, 0) or 0)
-                elseif lowerName:find("koi", 1, true) then
-                    hatchRefundTotal = hatchRefundTotal + (readBuffPercent(entry, {"koi", "hatch", "refund", "eggback"}, 0) or 0)
-                elseif lowerName:find("bronto", 1, true) or lowerName:find("brontosaurus", 1, true) then
-                    sizeBoostTotal = sizeBoostTotal + (readBuffPercent(entry, {"bronto", "hatch", "size", "boost"}, 30) or 0)
-                end
+                addEntry(entry, "Selected")
             end
         end
 
-        if sellRefundTotal > 0 then
-            lines[#lines + 1] = ("Team total | sell egg refund chance = %.1f%%"):format(sellRefundTotal)
+        if totals.SellRefund > 0 then
+            lines[#lines + 1] = ("Active total | sell egg refund chance = %.1f%%"):format(totals.SellRefund)
         end
-        if hatchRefundTotal > 0 then
-            lines[#lines + 1] = ("Team total | hatch egg refund chance = %.1f%%"):format(hatchRefundTotal)
+        if totals.HatchRefund > 0 then
+            lines[#lines + 1] = ("Active total | hatch egg refund chance = %.1f%%"):format(totals.HatchRefund)
         end
-        if sizeBoostTotal > 0 then
-            lines[#lines + 1] = ("Team total | hatch size boost = %.1f%%"):format(sizeBoostTotal)
+        if totals.SizeBoost > 0 then
+            lines[#lines + 1] = ("Active total | hatch size boost = %.1f%%"):format(totals.SizeBoost)
+        end
+
+        local summary = ("Active buffs: Sell refund %.1f%% | Hatch refund %.1f%% | Size boost %.1f%%"):format(
+            totals.SellRefund,
+            totals.HatchRefund,
+            totals.SizeBoost
+        )
+        if UIRefresh.ActiveBuffSummary then
+            UIRefresh.ActiveBuffSummary.Text = summary
         end
 
         if #lines == 0 then
-            log("No hatch/egg/refund/size/seal stat fields detected on selected hatch team pets.")
+            log("No active or selected hatch buff stats detected.")
             return 0
         end
 
+        log(summary)
         for _, line in ipairs(lines) do
             log("Detected pet buff: " .. line)
         end
@@ -5568,11 +5662,24 @@ function buildHatchPage()
         log("Seal team updated: " .. selectedListToText(Config.Hatch.SealPets))
     end)
 
+    local buffSummary = Instance.new("TextLabel")
+    buffSummary.Name = "ActiveBuffSummary"
+    buffSummary.BackgroundTransparency = 1
+    buffSummary.Size = UDim2.new(1, 0, 0, 36)
+    buffSummary.Font = Enum.Font.GothamMedium
+    buffSummary.Text = "Active buffs: press calculate"
+    buffSummary.TextColor3 = Theme.Muted
+    buffSummary.TextSize = 12
+    buffSummary.TextWrapped = true
+    buffSummary.TextXAlignment = Enum.TextXAlignment.Left
+    buffSummary.Parent = hatchTeamsSection
+    UIRefresh.ActiveBuffSummary = buffSummary
+
     createButton(hatchTeamsSection, "Run Hatch Teams Once", function()
         Actions.RunHatchTeamsOnce()
     end)
 
-    createButton(hatchTeamsSection, "Calculate Selected Buffs", function()
+    createButton(hatchTeamsSection, "Calculate Active Buffs", function()
         Actions.LogSelectedHatchBuffs()
     end)
 
