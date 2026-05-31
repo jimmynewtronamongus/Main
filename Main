@@ -1196,7 +1196,9 @@ function isLocalPlacedPet(petModel, uuid)
         end
     end
 
-    return not sawOwner or PetDisplayNamesByUuid[uuidCacheKey(uuid)] ~= nil
+    return not sawOwner
+        or PetDisplayNamesByUuid[uuidCacheKey(uuid)] ~= nil
+        or (type(isTrackedPetUuid) == "function" and isTrackedPetUuid(uuid))
 end
 
 function scanPlacedPets()
@@ -1460,6 +1462,7 @@ local Runtime = {
     SealIndex = 1,
     FavoriteAppliedByUuid = {},
     EggEspBillboards = {},
+    EggPredictionCache = {},
 }
 
 local Actions = {}
@@ -1557,14 +1560,25 @@ end
 
 function selectedPetEntries(selected)
     local entries = {}
+    local seen = {}
     for _, name in ipairs(selected and selected.__order or {}) do
         if isSelectedName(selected, name) then
             local entry = Inventory.PetsByName[name]
-            if entry then
+            if entry and not seen[entry] then
+                seen[entry] = true
                 entries[#entries + 1] = entry
             end
         end
     end
+
+    for key in pairs((type(selected) == "table" and selected.__uuidKeys) or {}) do
+        local entry = findPetEntryByUuidKey(key)
+        if entry and not seen[entry] then
+            seen[entry] = true
+            entries[#entries + 1] = entry
+        end
+    end
+
     return entries
 end
 
@@ -1594,9 +1608,7 @@ function captureSelectedPetUuidKeys(selected)
                     keys[key] = true
                     selectedTableRememberUuid(selected, uuid)
 
-                    if not isUuidOnlyName(name) and not tostring(name):match("^Placed Pet ") then
-                        PetDisplayNamesByUuid[key] = name
-                    end
+                    rememberPetName(uuid, name)
                 end
             else
                 local uuid = canonicalizeUuid(name)
@@ -1633,6 +1645,53 @@ function syncSelectedPetOptions(selected, options, selectedUuidKeys)
             end
         end
     end
+
+    for key in pairs(selectedUuidKeys) do
+        local rememberedName = PetDisplayNamesByUuid[key]
+        local entry = findPetEntryByUuidKey(key)
+        local displayName = entry and entry.Name or rememberedName
+        if displayName and displayName ~= "" and not selected[displayName] then
+            selected[displayName] = true
+            local exists = false
+            for _, option in ipairs(selected.__order or {}) do
+                if option == displayName then
+                    exists = true
+                    break
+                end
+            end
+            if not exists then
+                selected.__order[#selected.__order + 1] = displayName
+            end
+        end
+    end
+end
+
+function isTrackedPetUuid(uuid)
+    local key = uuid and uuidCacheKey(uuid) or nil
+    if not key or key == "" then
+        return false
+    end
+
+    for _, selected in ipairs({
+        Config.Main.LevelPets,
+        Config.Main.FeedPets,
+        Config.Main.KgBoosterPets,
+        Config.Main.KgTargetPets,
+        Config.Main.PickAndPlacePets,
+        Config.Mutation.PetsToUse,
+        Config.Mutation.MutationCooldownPets,
+        Config.Mutation.PetMutationGivers,
+        Config.Misc.FavoritePets,
+        Config.Hatch.EggReductionPets,
+        Config.Hatch.HatchSupportPets,
+        Config.Hatch.SealPets,
+    }) do
+        if type(selected) == "table" and selected.__uuidKeys and selected.__uuidKeys[key] then
+            return true
+        end
+    end
+
+    return false
 end
 
 function nextSelectedPetEntry(selected, runtimeIndexKey, skipEntry)
@@ -4311,6 +4370,10 @@ function installHatchActions()
     end
 
     local function predictEggPetName(eggObject)
+        if Runtime.EggPredictionCache[eggObject] then
+            return Runtime.EggPredictionCache[eggObject]
+        end
+
         local predicted = getMetadataTextField(eggObject, {
             "PetName",
             "PetType",
@@ -4324,6 +4387,7 @@ function installHatchActions()
         })
 
         if predicted and not isLikelyEggName(predicted) then
+            Runtime.EggPredictionCache[eggObject] = predicted
             return predicted
         end
 
@@ -4350,7 +4414,42 @@ function installHatchActions()
         end
 
         if bestName then
+            Runtime.EggPredictionCache[eggObject] = bestName
             return bestName
+        end
+
+        local remote = findGameEventRemote("PetEggService")
+        if remote and remote:IsA("RemoteFunction") then
+            for _, action in ipairs({"GetPet", "GetHatchPet", "GetEggPet", "GetPetInEgg", "GetReward"}) do
+                local ok, result = callGameEvent("PetEggService", action, eggObject)
+                if ok and result ~= nil then
+                    local resultText = tostring(result)
+                    if type(result) == "table" then
+                        local parts = {}
+                        local function collect(value, depth)
+                            if depth > 4 then
+                                return
+                            end
+                            if type(value) == "table" then
+                                for key, child in pairs(value) do
+                                    parts[#parts + 1] = tostring(key)
+                                    collect(child, depth + 1)
+                                end
+                            else
+                                parts[#parts + 1] = tostring(value)
+                            end
+                        end
+                        collect(result, 0)
+                        resultText = table.concat(parts, " ")
+                    end
+
+                    local resultName = findPetBaseNameInText(resultText) or petBaseNameForCache(resultText)
+                    if resultName then
+                        Runtime.EggPredictionCache[eggObject] = resultName
+                        return resultName
+                    end
+                end
+            end
         end
 
         return "Unknown pet"
