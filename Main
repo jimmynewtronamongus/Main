@@ -964,6 +964,22 @@ local function getPhysicalPetDisplayName(petModel, uuid)
         end
     end
 
+    local searchText = getAttributeText(petModel)
+    local bestName
+    for _, petName in ipairs(OPTIONS.Pets or {}) do
+        local normalized = tostring(petName or ""):lower():gsub("[^%w]", "")
+        if normalized ~= "" and searchText:gsub("[^%w]", ""):find(normalized, 1, true) then
+            if not bestName or #petName > #bestName then
+                bestName = petName
+            end
+        end
+    end
+
+    if bestName then
+        PetDisplayNamesByUuid[uuidCacheKey(uuid)] = bestName
+        return bestName
+    end
+
     return "Placed Pet " .. tostring(uuid)
 end
 
@@ -1211,6 +1227,11 @@ local Config = {
         AutoSellWithSeal = false,
         OnlySellNewlyHatched = true,
         DontSellFavorited = true,
+        KeepMutatedPets = true,
+        KeepMutations = {},
+        KeepByMinWeight = true,
+        KeepMinWeight = 3.0,
+        EggEsp = true,
         PlaceEggInterval = 8,
         MaxEggsPlaced = MAX_EGGS_PLACED,
         EggPlacementMode = "Middle",
@@ -1262,6 +1283,7 @@ local Runtime = {
     HatchSupportIndex = 1,
     SealIndex = 1,
     FavoriteAppliedByUuid = {},
+    EggEspBillboards = {},
 }
 
 local Actions = {}
@@ -2088,6 +2110,7 @@ end
 Config.Hatch.EggReductionPets = copyArrayToSelected(OPTIONS.Pets)
 Config.Hatch.HatchSupportPets = copyArrayToSelected(OPTIONS.Pets)
 Config.Hatch.SealPets = copyArrayToSelected(OPTIONS.Pets)
+Config.Hatch.KeepMutations = copyArrayToSelected(OPTIONS.Mutations)
 Config.Main.LevelPets = copyArrayToSelected(OPTIONS.Pets)
 Config.Main.FeedPets = copyArrayToSelected(OPTIONS.Pets)
 Config.Main.KgBoosterPets = copyArrayToSelected(OPTIONS.Pets)
@@ -3079,6 +3102,7 @@ local function refreshInventoryOptions(reason)
     syncSelectedPetOptions(Config.Main.KgTargetPets, OPTIONS.Pets, selectedPetUuidKeys.KgTargetPets)
     syncSelectedPetOptions(Config.Main.PickAndPlacePets, OPTIONS.Pets, selectedPetUuidKeys.PickAndPlacePets)
     syncSelectedOptions(Config.Hatch.SelectedEggs, OPTIONS.Eggs)
+    syncSelectedOptions(Config.Hatch.KeepMutations, OPTIONS.Mutations)
     syncSelectedOptions(Config.Mutation.SelectedMutations, OPTIONS.Mutations)
     syncSelectedPetOptions(Config.Mutation.PetsToUse, OPTIONS.Pets, selectedPetUuidKeys.MutationPets)
     syncSelectedPetOptions(Config.Mutation.MutationCooldownPets, OPTIONS.Pets, selectedPetUuidKeys.MutationCooldownPets)
@@ -3147,6 +3171,10 @@ local function refreshInventoryOptions(reason)
 
     if UIRefresh.SealPets then
         UIRefresh.SealPets(Config.Hatch.SealPets, OPTIONS.Pets)
+    end
+
+    if UIRefresh.HatchKeepMutations then
+        UIRefresh.HatchKeepMutations(Config.Hatch.KeepMutations, OPTIONS.Mutations)
     end
 
     if UIRefresh.LevelPets then
@@ -3890,6 +3918,233 @@ do
         "boost",
     }
 
+    local function readEntryMutationNames(entry)
+        local found = {}
+        local ordered = {}
+
+        local function addMutation(value)
+            local text = stripStackData(value)
+            if text == "" then
+                return
+            end
+
+            for _, mutationName in ipairs(OPTIONS.Mutations or {}) do
+                if mutationName ~= "Mutation Machine"
+                    and tostring(text):lower():find(tostring(mutationName):lower(), 1, true)
+                    and not found[mutationName]
+                then
+                    found[mutationName] = true
+                    ordered[#ordered + 1] = mutationName
+                end
+            end
+        end
+
+        for _, instance in ipairs(entry and entry.Instances or {}) do
+            local ok, attributes = pcall(function()
+                return instance:GetAttributes()
+            end)
+            if ok and type(attributes) == "table" then
+                for key, value in pairs(attributes) do
+                    local keyText = tostring(key or ""):lower()
+                    if keyText:find("mutation", 1, true) or keyText:find("variant", 1, true) then
+                        addMutation(value)
+                    end
+                    if type(value) == "boolean" and value == true then
+                        addMutation(key)
+                    elseif type(value) == "string" then
+                        addMutation(value)
+                    end
+                end
+            end
+
+            for _, descendant in ipairs(instance:GetDescendants()) do
+                local keyText = tostring(descendant.Name or ""):lower()
+                if descendant:IsA("StringValue") and (keyText:find("mutation", 1, true) or keyText:find("variant", 1, true)) then
+                    addMutation(descendant.Value)
+                elseif descendant:IsA("BoolValue") and descendant.Value == true then
+                    addMutation(descendant.Name)
+                end
+            end
+        end
+
+        return ordered
+    end
+
+    local function selectedMutationMatch(entry)
+        if not Config.Hatch.KeepMutatedPets then
+            return nil
+        end
+
+        local mutations = readEntryMutationNames(entry)
+        for _, mutationName in ipairs(mutations) do
+            if Config.Hatch.KeepMutations[mutationName] then
+                return mutationName
+            end
+        end
+
+        return nil
+    end
+
+    local function getPetBaseWeight(entry)
+        for _, instance in ipairs(entry and entry.Instances or {}) do
+            local value = readNumericField(instance, {
+                "BaseWeight",
+                "BaseKG",
+                "BaseMass",
+                "Weight",
+                "KG",
+                "Mass",
+            }, {
+                "Max",
+                "Target",
+                "Goal",
+                "Boost",
+            })
+
+            if value then
+                return value
+            end
+        end
+
+        return getPetKg(entry)
+    end
+
+    local function autoKeepReason(entry)
+        local mutationName = selectedMutationMatch(entry)
+        if mutationName then
+            return "mutation " .. mutationName
+        end
+
+        if Config.Hatch.KeepByMinWeight then
+            local weight = getPetBaseWeight(entry)
+            local target = tonumber(Config.Hatch.KeepMinWeight) or 3
+            if weight and weight >= target then
+                return ("weight %.2fkg >= %.2fkg"):format(weight, target)
+            end
+        end
+
+        return nil
+    end
+
+    local function predictEggPetName(eggObject)
+        local predicted = getMetadataTextField(eggObject, {
+            "PetName",
+            "PetType",
+            "HatchedPet",
+            "HatchPet",
+            "PredictedPet",
+            "ResultPet",
+            "RewardPet",
+            "NextPet",
+            "Type",
+        })
+
+        if predicted and not isLikelyEggName(predicted) then
+            return predicted
+        end
+
+        return "Unknown pet"
+    end
+
+    local function isEggReadyToHatch(eggObject)
+        local ready = readBooleanField(eggObject, {
+            "Ready",
+            "CanHatch",
+            "HatchReady",
+            "IsReady",
+        })
+        if ready ~= nil then
+            return ready
+        end
+
+        local remaining = readNumericField(eggObject, {
+            "TimeLeft",
+            "Remaining",
+            "HatchTime",
+            "ReadyTime",
+            "Cooldown",
+        })
+        if remaining ~= nil then
+            return remaining <= 0
+        end
+
+        return true
+    end
+
+    local function getEggAdornee(eggObject)
+        if eggObject:IsA("BasePart") then
+            return eggObject
+        end
+        return eggObject:FindFirstChildWhichIsA("BasePart", true)
+    end
+
+    local function updateEggEsp()
+        for object, billboard in pairs(Runtime.EggEspBillboards) do
+            if not object.Parent or not Config.Hatch.EggEsp then
+                billboard:Destroy()
+                Runtime.EggEspBillboards[object] = nil
+            end
+        end
+
+        if not Config.Hatch.EggEsp then
+            return
+        end
+
+        local objects = getFarmPhysicalContainer("Objects_Physical")
+        if not objects then
+            return
+        end
+
+        for _, object in ipairs(objects:GetChildren()) do
+            if isLikelyEggName(getPhysicalEggName(object)) then
+                local ready = isEggReadyToHatch(object)
+                local billboard = Runtime.EggEspBillboards[object]
+                local adornee = getEggAdornee(object)
+                if adornee and not billboard then
+                    billboard = Instance.new("BillboardGui")
+                    billboard.Name = "GAGPetEggESP"
+                    billboard.AlwaysOnTop = true
+                    billboard.Size = UDim2.fromOffset(180, 52)
+                    billboard.StudsOffset = Vector3.new(0, 4, 0)
+                    billboard.Adornee = adornee
+                    billboard.Parent = screenGui
+
+                    local label = Instance.new("TextLabel")
+                    label.Name = "Label"
+                    label.BackgroundColor3 = Theme.Background
+                    label.BackgroundTransparency = 0.15
+                    label.BorderSizePixel = 0
+                    label.Size = UDim2.fromScale(1, 1)
+                    label.Font = Enum.Font.GothamBold
+                    label.TextColor3 = Theme.Text
+                    label.TextSize = 12
+                    label.TextWrapped = true
+                    label.Parent = billboard
+                    makeCorner(label, 6)
+                    makeStroke(label, Theme.Accent, 1)
+
+                    Runtime.EggEspBillboards[object] = billboard
+                end
+
+                if billboard then
+                    billboard.Enabled = ready
+                    local label = billboard:FindFirstChild("Label")
+                    if label then
+                        label.Text = ("%s\n%s"):format(getPhysicalEggName(object), predictEggPetName(object))
+                        label.TextColor3 = ready and Theme.Text or Theme.Muted
+                    end
+                end
+            end
+        end
+    end
+
+    function Actions.RefreshEggEsp(silent)
+        updateEggEsp()
+        if not silent then
+            log("Pet egg ESP refreshed.")
+        end
+    end
+
     local function selectedEggPriorityList()
         local priority = {}
 
@@ -3976,13 +4231,20 @@ do
         local keepRule = Config.Hatch.SellRulesByEgg[eggName] or {}
         local soldCount = 0
         for _, entry in ipairs(petEntries or {}) do
-            if not keepRule[entry.Name] then
+            local reason = autoKeepReason(entry)
+            if reason then
+                log(("Kept hatch pet by auto rule: %s (%s)"):format(tostring(entry.Name), reason))
+            elseif not keepRule[entry.Name] then
                 if not Config.Hatch.DontSellFavorited or not readBooleanField(firstInstance(entry), {"Favorite", "Favorited", "IsFavorite", "Locked"}) then
                     if sellPetEntry(entry) then
                         soldCount = soldCount + 1
                         log("Sold non-keep hatch pet: " .. tostring(entry.Name))
                     end
+                else
+                    log("Kept favorited hatch pet: " .. tostring(entry.Name))
                 end
+            else
+                log("Kept hatch pet by egg rule: " .. tostring(entry.Name))
             end
         end
 
@@ -4022,6 +4284,28 @@ do
                     addBuffLine(lines, seen, entry.Name, descendant.Name, descendant.Value)
                 end
             end
+        end
+
+        local lowerName = tostring(entry and entry.Name or ""):lower()
+        local function addEstimate(label, value)
+            if value and value > 0 then
+                if value <= 1 then
+                    value = value * 100
+                end
+                local line = ("%s | calculated %s = %.1f%%"):format(tostring(entry.Name), label, value)
+                if not seen[line] then
+                    seen[line] = true
+                    lines[#lines + 1] = line
+                end
+            end
+        end
+
+        if lowerName:find("seal", 1, true) then
+            addEstimate("sell egg refund chance", readNumericField(firstInstance(entry), {"Refund", "EggBack", "SellEgg", "Chance", "Percent"}) or 0)
+        elseif lowerName:find("koi", 1, true) then
+            addEstimate("hatch egg refund chance", readNumericField(firstInstance(entry), {"Refund", "EggBack", "HatchEgg", "Chance", "Percent"}) or 0)
+        elseif lowerName:find("bronto", 1, true) then
+            addEstimate("hatch size boost", readNumericField(firstInstance(entry), {"SizeBoost", "HatchSize", "PetSize", "Boost", "Percent"}) or 30)
         end
 
         return lines
@@ -4432,11 +4716,11 @@ local mutationPage = createPage("Mutation")
 local miscPage = createPage("Misc")
 local logsPage = createPage("Logs")
 
-createNavButton("Main", "Main", 1)
-createNavButton("Config", "Config", 2)
-createNavButton("Hatch", "Auto Hatch", 3)
+createNavButton("Main", "Dashboard", 1)
+createNavButton("Config", "Teams", 2)
+createNavButton("Hatch", "Hatch & Keep", 3)
 createNavButton("Mutation", "Mutation", 4)
-createNavButton("Misc", "Misc", 5)
+createNavButton("Misc", "Farms & Shops", 5)
 createNavButton("Logs", "Logs", 6)
 
 function buildMainPage()
@@ -4591,7 +4875,7 @@ end
 buildConfigPage()
 
 function buildHatchPage()
-    local hatchSection = createSection(hatchPage, "Hatching")
+    local hatchSection = createSection(hatchPage, "Quick Hatch")
     local sellRuleSummary
     local sellPetsRefresh
 
@@ -4635,17 +4919,17 @@ function buildHatchPage()
         end
     end
 
-    createToggle(hatchSection, "Auto Hatch", Config.Hatch.AutoHatch, function(enabled)
+    createToggle(hatchSection, "Auto Hatch Ready Eggs", Config.Hatch.AutoHatch, function(enabled)
         Config.Hatch.AutoHatch = enabled
         Actions.AutoHatch(enabled)
     end)
 
-    UIRefresh.EggsToHatch = createMultiSelect(hatchSection, "Eggs To Hatch", OPTIONS.Eggs, Config.Hatch.SelectedEggs, function()
+    UIRefresh.EggsToHatch = createMultiSelect(hatchSection, "Egg Queue", OPTIONS.Eggs, Config.Hatch.SelectedEggs, function()
         log("Egg selection updated: " .. selectedListToText(Config.Hatch.SelectedEggs))
         updateSelectedEggDependentControls()
     end)
 
-    UIRefresh.EggPriority = createDropdown(hatchSection, "Top Priority Egg", selectedEggRuleOptions(), Config.Hatch.EggPriority[1], function(value)
+    UIRefresh.EggPriority = createDropdown(hatchSection, "First Egg", selectedEggRuleOptions(), Config.Hatch.EggPriority[1], function(value)
         if not value or value == "" then
             Config.Hatch.EggPriority = {}
             log("Egg priority cleared.")
@@ -4656,7 +4940,7 @@ function buildHatchPage()
         log("Egg priority set to " .. value)
     end)
 
-    createButton(hatchSection, "Use Selected Eggs As Priority Rotation", function()
+    createButton(hatchSection, "Use Queue As Rotation", function()
         Config.Hatch.EggPriority = selectedToPriority(Config.Hatch.SelectedEggs)
         normalizeEggPriorityToSelected()
         if UIRefresh.EggPriority then
@@ -4670,7 +4954,7 @@ function buildHatchPage()
         log("Auto Place Eggs " .. (enabled and "enabled" or "disabled"))
     end)
 
-    createTextInput(hatchSection, "Max Eggs Placed", tostring(MAX_EGGS_PLACED), Config.Hatch.MaxEggsPlaced, function(text)
+    createTextInput(hatchSection, "Garden Egg Limit", tostring(MAX_EGGS_PLACED), Config.Hatch.MaxEggsPlaced, function(text)
         local value = tonumber(text)
         if value then
             Config.Hatch.MaxEggsPlaced = clampNumber(math.floor(value), 1, 100)
@@ -4691,13 +4975,29 @@ function buildHatchPage()
         end
     end)
 
-    local hatchTeamsSection = createSection(hatchPage, "Hatch Teams")
+    local espSection = createSection(hatchPage, "Egg ESP")
 
-    UIRefresh.EggReductionPets = createMultiSelect(hatchTeamsSection, "Egg Reduction Team", OPTIONS.Pets, Config.Hatch.EggReductionPets, function()
+    createToggle(espSection, "Show Ready Egg Pet", Config.Hatch.EggEsp, function(enabled)
+        Config.Hatch.EggEsp = enabled
+        if Actions.RefreshEggEsp then
+            Actions.RefreshEggEsp()
+        end
+        log("Pet egg ESP " .. (enabled and "enabled" or "disabled"))
+    end)
+
+    createButton(espSection, "Refresh Egg ESP", function()
+        if Actions.RefreshEggEsp then
+            Actions.RefreshEggEsp()
+        end
+    end)
+
+    local hatchTeamsSection = createSection(hatchPage, "Buff Teams")
+
+    UIRefresh.EggReductionPets = createMultiSelect(hatchTeamsSection, "Egg Cooldown Team", OPTIONS.Pets, Config.Hatch.EggReductionPets, function()
         log("Egg reduction team updated: " .. selectedListToText(Config.Hatch.EggReductionPets))
     end)
 
-    UIRefresh.HatchSupportPets = createMultiSelect(hatchTeamsSection, "Refund / Size Team", OPTIONS.Pets, Config.Hatch.HatchSupportPets, function()
+    UIRefresh.HatchSupportPets = createMultiSelect(hatchTeamsSection, "Koi / Bronto Team", OPTIONS.Pets, Config.Hatch.HatchSupportPets, function()
         log("Refund / size team updated: " .. selectedListToText(Config.Hatch.HatchSupportPets))
     end)
 
@@ -4709,13 +5009,13 @@ function buildHatchPage()
         Actions.RunHatchTeamsOnce()
     end)
 
-    createButton(hatchTeamsSection, "Detect Selected Pet Buffs", function()
+    createButton(hatchTeamsSection, "Calculate Selected Buffs", function()
         Actions.LogSelectedHatchBuffs()
     end)
 
-    local sellSection = createSection(hatchPage, "Egg Pet Keep Rules")
+    local sellSection = createSection(hatchPage, "Sell Protection")
 
-    createToggle(sellSection, "Sell Non-Keep Pets", Config.Hatch.AutoSellPets, function(enabled)
+    createToggle(sellSection, "Sell Pets Not Kept", Config.Hatch.AutoSellPets, function(enabled)
         Config.Hatch.AutoSellPets = enabled
         log("Sell Non-Keep Pets " .. (enabled and "enabled" or "disabled"))
     end)
@@ -4733,6 +5033,28 @@ function buildHatchPage()
     createToggle(sellSection, "Do Not Sell Favorited Pets", Config.Hatch.DontSellFavorited, function(enabled)
         Config.Hatch.DontSellFavorited = enabled
         log("Do Not Sell Favorited Pets " .. (enabled and "enabled" or "disabled"))
+    end)
+
+    createToggle(sellSection, "Keep Selected Mutations", Config.Hatch.KeepMutatedPets, function(enabled)
+        Config.Hatch.KeepMutatedPets = enabled
+        log("Keep Selected Mutations " .. (enabled and "enabled" or "disabled"))
+    end)
+
+    UIRefresh.HatchKeepMutations = createMultiSelect(sellSection, "Mutations To Keep", OPTIONS.Mutations, Config.Hatch.KeepMutations, function()
+        log("Hatch keep mutations updated: " .. selectedListToText(Config.Hatch.KeepMutations))
+    end)
+
+    createToggle(sellSection, "Keep By Base Weight", Config.Hatch.KeepByMinWeight, function(enabled)
+        Config.Hatch.KeepByMinWeight = enabled
+        log("Keep By Base Weight " .. (enabled and "enabled" or "disabled"))
+    end)
+
+    createTextInput(sellSection, "Min Base Weight KG", "3.0", Config.Hatch.KeepMinWeight, function(text)
+        local value = tonumber(text)
+        if value then
+            Config.Hatch.KeepMinWeight = math.max(0, value)
+            log("Minimum hatch keep weight set to " .. tostring(Config.Hatch.KeepMinWeight) .. " KG")
+        end
     end)
 
     sellRuleSummary = Instance.new("TextLabel")
@@ -4794,6 +5116,9 @@ function buildMutationPage()
             syncSelectedOptions(Config.Mutation.SelectedMutations, OPTIONS.Mutations)
             if UIRefresh.Mutations then
                 UIRefresh.Mutations(Config.Mutation.SelectedMutations, OPTIONS.Mutations)
+            end
+            if UIRefresh.HatchKeepMutations then
+                UIRefresh.HatchKeepMutations(Config.Hatch.KeepMutations, OPTIONS.Mutations)
             end
             log("Mutation names refreshed from GetPetMutationNames.")
         else
@@ -5159,6 +5484,7 @@ local automationTimers = {
     Rebirth = 0,
     PickAndPlace = 0,
     Mutation = 0,
+    EggEsp = 0,
 }
 
 local automationBusy = {
@@ -5316,6 +5642,11 @@ task.spawn(function()
             end)
         end
 
+        if Config.Hatch.EggEsp and Actions.RefreshEggEsp and now - automationTimers.EggEsp >= 1 then
+            automationTimers.EggEsp = now
+            Actions.RefreshEggEsp(true)
+        end
+
         task.wait(0.2)
     end
 end)
@@ -5331,6 +5662,7 @@ task.spawn(function()
         if Config.Hatch.AutoHatch then activeCount = activeCount + 1 end
         if Config.Hatch.AutoPlaceEggs then activeCount = activeCount + 1 end
         if Config.Hatch.AutoSellPets then activeCount = activeCount + 1 end
+        if Config.Hatch.EggEsp then activeCount = activeCount + 1 end
         if Config.Mutation.AutoMutation then activeCount = activeCount + 1 end
         if Config.Misc.AutoFavorite then activeCount = activeCount + 1 end
         if Config.Misc.AutoPickupFruit then activeCount = activeCount + 1 end
