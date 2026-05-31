@@ -4381,6 +4381,53 @@ function installHatchActions()
         return true
     end
 
+    local function getEggRemainingSeconds(eggObject)
+        local remaining = readNumericField(eggObject, {
+            "TimeLeft",
+            "Remaining",
+            "RemainingTime",
+            "HatchTimeLeft",
+            "HatchRemaining",
+            "Cooldown",
+        })
+
+        if remaining ~= nil then
+            return math.max(0, remaining)
+        end
+
+        local readyAt = readNumericField(eggObject, {
+            "ReadyAt",
+            "HatchAt",
+            "HatchReadyAt",
+            "EndTime",
+            "FinishTime",
+        })
+
+        if readyAt then
+            local now = os.time()
+            if readyAt > now then
+                return readyAt - now
+            end
+            return 0
+        end
+
+        return nil
+    end
+
+    local function formatDuration(seconds)
+        seconds = math.max(0, math.floor(tonumber(seconds) or 0))
+        local minutes = math.floor(seconds / 60)
+        local secs = seconds % 60
+
+        if minutes >= 60 then
+            local hours = math.floor(minutes / 60)
+            minutes = minutes % 60
+            return ("%dh %02dm"):format(hours, minutes)
+        end
+
+        return ("%dm %02ds"):format(minutes, secs)
+    end
+
     local function getEggAdornee(eggObject)
         if eggObject:IsA("BasePart") then
             return eggObject
@@ -4413,7 +4460,7 @@ function installHatchActions()
                     billboard = Instance.new("BillboardGui")
                     billboard.Name = "GAGPetEggESP"
                     billboard.AlwaysOnTop = true
-                    billboard.Size = UDim2.fromOffset(180, 52)
+                    billboard.Size = UDim2.fromOffset(190, 64)
                     billboard.StudsOffset = Vector3.new(0, 4, 0)
                     billboard.Adornee = adornee
                     billboard.Parent = screenGui
@@ -4436,10 +4483,12 @@ function installHatchActions()
                 end
 
                 if billboard then
-                    billboard.Enabled = ready
+                    local remaining = getEggRemainingSeconds(object)
+                    billboard.Enabled = true
                     local label = billboard:FindFirstChild("Label")
                     if label then
-                        label.Text = ("%s\n%s"):format(getPhysicalEggName(object), predictEggPetName(object))
+                        local timeText = ready and "Ready" or (remaining and ("Hatches in " .. formatDuration(remaining)) or "Timer unknown")
+                        label.Text = ("%s\n%s\n%s"):format(getPhysicalEggName(object), predictEggPetName(object), timeText)
                         label.TextColor3 = ready and Theme.Text or Theme.Muted
                     end
                 end
