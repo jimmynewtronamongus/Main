@@ -4966,6 +4966,7 @@ function buildLogsPage()
 end
 buildLogsPage()
 
+local function startRuntimeBindings()
 local dragging = false
 local dragStart
 local startPosition
@@ -5348,6 +5349,9 @@ task.spawn(function()
         RunService.Heartbeat:Wait()
     end
 end)
+end
+
+startRuntimeBindings()
 
 refreshInventoryOptions("initial")
 switchTab("Main")
