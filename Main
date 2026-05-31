@@ -3904,7 +3904,8 @@ end
 function Actions.AutoKgBoost(enabled)
     log("Auto KG Boost " .. (enabled and "enabled" or "disabled") .. " | max equipped " .. tostring(MAX_PETS_EQUIPPED) .. " | target " .. tostring(KG_BOOST_TARGET_KG) .. " KG")
 end
-do
+
+local function installHatchActions()
     local BUFF_KEYWORDS = {
         "egg",
         "hatch",
@@ -4469,6 +4470,8 @@ do
         return sellUnkeptPets(eggName, petEntries, true)
     end
 end
+
+installHatchActions()
 
 function Actions.AutoHatch(enabled)
     log("Auto Hatch " .. (enabled and "enabled" or "disabled"))
