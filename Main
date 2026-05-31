@@ -1468,6 +1468,82 @@ local Config = {
     },
 }
 
+local CONFIG_FILE = "gag-main-config.json"
+local configLoaded = false
+local configSaveQueued = false
+
+function mergeSavedConfig(target, source)
+    if type(target) ~= "table" or type(source) ~= "table" then
+        return
+    end
+
+    for key, value in pairs(source) do
+        local current = target[key]
+        if current == nil then
+            target[key] = value
+        else
+            if type(current) == "table" and type(value) == "table" then
+                mergeSavedConfig(current, value)
+            elseif type(current) == type(value) then
+                target[key] = value
+            end
+        end
+    end
+end
+
+function loadConfig()
+    if type(readfile) ~= "function" or type(isfile) ~= "function" or not isfile(CONFIG_FILE) then
+        configLoaded = true
+        return false
+    end
+
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(readfile(CONFIG_FILE))
+    end)
+
+    if ok and type(data) == "table" then
+        mergeSavedConfig(Config, type(data.Config) == "table" and data.Config or data)
+        configLoaded = true
+        return true
+    end
+
+    configLoaded = true
+    return false
+end
+
+function saveConfig()
+    if type(writefile) ~= "function" then
+        return false
+    end
+
+    local ok, encoded = pcall(function()
+        return HttpService:JSONEncode({
+            Version = 1,
+            Config = Config,
+        })
+    end)
+
+    if not ok then
+        return false
+    end
+
+    return pcall(function()
+        writefile(CONFIG_FILE, encoded)
+    end)
+end
+
+function scheduleSaveConfig()
+    if not configLoaded or configSaveQueued then
+        return
+    end
+
+    configSaveQueued = true
+    task.delay(0.35, function()
+        configSaveQueued = false
+        saveConfig()
+    end)
+end
+
 local Runtime = {
     SelectedSellRuleEgg = OPTIONS.EggRules[1] or "",
     Logs = {},
@@ -2448,6 +2524,7 @@ Config.Misc.FruitsToCollect = copyArrayToSelected(OPTIONS.FruitsToCollect)
 Config.Misc.FruitsToSell = copyArrayToSelected(OPTIONS.FruitsToSell)
 Config.Misc.ShopsToBuy = copyArrayToSelected(OPTIONS.Shops)
 Config.Misc.SeedsToPlace = copyArrayToSelected(OPTIONS.SeedsToPlace)
+loadConfig()
 
 local Theme = {
     Background = Color3.fromRGB(7, 10, 15),
@@ -3017,6 +3094,7 @@ function createToggle(parent, text, default, callback)
 
         if fire and callback then
             callback(enabled)
+            scheduleSaveConfig()
         end
     end
 
@@ -3094,6 +3172,7 @@ function createTextInput(parent, labelText, placeholder, default, callback)
     box.FocusLost:Connect(function()
         if callback then
             callback(box.Text)
+            scheduleSaveConfig()
         end
     end)
 
@@ -3227,6 +3306,7 @@ function createDropdown(parent, labelText, options, default, callback)
                 list.Visible = false
                 if callback then
                     callback(option)
+                    scheduleSaveConfig()
                 end
             end)
         end
@@ -3411,6 +3491,7 @@ function createMultiSelect(parent, labelText, options, selected, callback)
                 refresh()
                 if callback then
                     callback(selected)
+                    scheduleSaveConfig()
                 end
             end)
         end
@@ -5821,6 +5902,7 @@ function buildHatchPage()
             UIRefresh.EggPriority(Config.Hatch.EggPriority[1], selectedEggRuleOptions(), false)
         end
         log("Egg priority rotation: " .. table.concat(Config.Hatch.EggPriority, ", "))
+        scheduleSaveConfig()
     end)
 
     createToggle(hatchSection, "Auto Place Eggs", Config.Hatch.AutoPlaceEggs, function(enabled)
@@ -6583,4 +6665,10 @@ startRuntimeBindings()
 
 refreshInventoryOptions("initial")
 switchTab("Main")
+if Config.Misc.AntiLag then
+    fireGameEvent("SettingsService", "SetSetting", "PerformanceMode", true)
+end
+if Config.Misc.RemoveTextures then
+    Actions.SetTexturesRemoved(true)
+end
 log("Main GUI loaded. Backpack-driven options active. Wire automation loops inside the Actions table.")
