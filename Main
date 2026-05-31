@@ -1,0 +1,5354 @@
+-- GAG Main GUI scaffold
+-- Trade Hub is intentionally separate. This script will not load in the Trade Hub place.
+
+local TRADE_HUB_PLACE_ID = 129954712878723
+if game.PlaceId == TRADE_HUB_PLACE_ID then
+    warn("[GAG Main] Trade Hub detected. Run the separate Tradehub script here.")
+    return
+end
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+
+local localPlayer = Players.LocalPlayer
+if not localPlayer then
+    warn("[GAG Main] LocalPlayer not ready.")
+    return
+end
+
+local function getGuiParent()
+    local ok, coreGui = pcall(function()
+        return game:GetService("CoreGui")
+    end)
+
+    if ok and coreGui then
+        return coreGui
+    end
+
+    return localPlayer:WaitForChild("PlayerGui")
+end
+
+local existing = getGuiParent():FindFirstChild("GAGMainUI")
+if existing then
+    existing:Destroy()
+end
+
+local backpack = localPlayer:WaitForChild("Backpack", 9e9)
+local character = localPlayer.Character
+
+local MAX_PETS_EQUIPPED = 8
+local MAX_EGGS_PLACED = 13
+local KG_BOOST_TARGET_KG = 5.5
+local KG_BOOST_STEP_KG = 0.1
+local KG_BOOST_INTERVAL = 1
+
+local PET_GIVEN_MUTATIONS = {
+    Venom = true,
+    Nightmare = true,
+    Enchanted = true,
+}
+
+local OPTIONS = {
+    Eggs = {},
+    EggRules = {},
+    Pets = {},
+    PetsToSell = {},
+    Fruits = {},
+    FarmFruits = {},
+    FruitsToCollect = {},
+    FruitsToSell = {},
+    Seeds = {},
+    SeedsToPlace = {},
+    Shops = {
+        "Seed Shop",
+        "Gear Shop",
+        "Egg Shop",
+        "Honey Merchant",
+        "Cosmetic Shop",
+        "Event Merchant",
+        "Traveling Merchant",
+    },
+    Mutations = {
+        "Mutation Machine",
+        "Nightmare",
+        "Venom",
+        "Enchanted",
+    },
+    EggPetsByEgg = {},
+}
+
+local Inventory = {
+    Eggs = {},
+    Pets = {},
+    InventoryPets = {},
+    Fruits = {},
+    FarmFruits = {},
+    Seeds = {},
+    EggsByName = {},
+    PetsByName = {},
+    InventoryPetsByName = {},
+    FruitsByName = {},
+    FarmFruitsByName = {},
+    SeedsByName = {},
+    ItemsByUuid = {},
+}
+
+local PetDisplayNamesByUuid = {}
+
+local RemotePaths = {
+    PetsService = {"PetsService"},
+    ActivePetService = {"ActivePetService"},
+    PetGiftingService = {"PetGiftingService"},
+    PetShardService = {"PetShardService_RE"},
+    SettingsService = {"SettingsService"},
+    BuySeedStock = {"BuySeedStock"},
+    BuyDailySeedShopStock = {"BuyDailySeedShopStock"},
+    BuyEventShopRestock = {"BuyEventShopRestock"},
+    BuyEventShopStock = {"BuyEventShopStock"},
+    BuyPetEgg = {"BuyPetEgg"},
+    BuyGearStock = {"BuyGearStock"},
+    BuyCosmeticItem = {"BuyCosmeticItem"},
+    SellPet = {"SellPet_RE"},
+    SellItem = {"Sell_Item"},
+    FavoriteItem = {"Favorite_Item"},
+    BuyRebirth = {"BuyRebirth"},
+    Plant = {"Plant_RE"},
+    Crafting = {"CraftingGlobalObjectService"},
+    PetMutationMachine = {"PetMutationMachineService_RE"},
+    GetPetMutationNames = {"GetPetMutationNames"},
+    GetPetCooldown = {"GetPetCooldown"},
+    PetNameRerollerActivated = {"PetNameRerollerActivated"},
+    PetBoostService = {"PetBoostService"},
+    RemoveItem = {"Remove_Item"},
+    PetEggService = {"PetEggService"},
+    CollectFruit = {"Crops", "Collect"},
+    HarvestRemote = {"HarvestRemote"},
+    EggBoost = {"EggBoostServiceEvents", "Boost"},
+    PlantBoost = {"PlantBoostServiceEvents", "Boost"},
+    PetIncubatorBoost = {"PetIncubatorService", "Boost"},
+    PetIncubatorInputPet = {"PetIncubatorService", "InputPet"},
+    PetIncubatorRemovePet = {"PetIncubatorService", "RemovePet"},
+    PetIncubatorSubmitItem = {"PetIncubatorService", "SubmitItem"},
+    PetEggIncubatorBoost = {"PetEggIncubatorService", "Boost"},
+    PetEggIncubatorInputEgg = {"PetEggIncubatorService", "InputEgg"},
+    PetEggIncubatorRemoveEgg = {"PetEggIncubatorService", "RemoveEgg"},
+    PetEggIncubatorSubmitItem = {"PetEggIncubatorService", "SubmitItem"},
+    SeedPackOpen = {"SeedPack", "Open"},
+    AchievementClaim = {"AchievementService", "Claim"},
+    DailyQuestClaim = {"DailyQuests", "Claim"},
+    QuestClaim = {"Quests", "Claim"},
+    TradeSendRequest = {"TradeEvents", "SendRequest"},
+    TradeRespondRequest = {"TradeEvents", "RespondRequest"},
+    TradeAddItem = {"TradeEvents", "AddItem"},
+}
+
+local function getGameEventRemote(name)
+    local path = RemotePaths[name]
+    if not path then
+        return nil
+    end
+
+    local node = ReplicatedStorage:WaitForChild("GameEvents", 9e9)
+    for _, childName in ipairs(path) do
+        node = node:WaitForChild(childName, 9e9)
+    end
+    return node
+end
+
+local function fireGameEvent(name, ...)
+    local remote = getGameEventRemote(name)
+    if remote and remote:IsA("RemoteEvent") then
+        remote:FireServer(...)
+        return true
+    end
+    if remote and remote:IsA("RemoteFunction") then
+        local ok = pcall(function(...)
+            return remote:InvokeServer(...)
+        end, ...)
+        return ok
+    end
+    return false
+end
+
+local function findGameEventRemote(name)
+    local path = RemotePaths[name]
+    if not path then
+        return nil
+    end
+
+    local root = ReplicatedStorage:FindFirstChild("GameEvents")
+    local node = root
+    for _, childName in ipairs(path) do
+        node = node and node:FindFirstChild(childName)
+        if not node then
+            break
+        end
+    end
+
+    if node then
+        return node
+    end
+
+    local fallbackName = path[#path]
+    if root and fallbackName then
+        for _, descendant in ipairs(root:GetDescendants()) do
+            if descendant.Name == fallbackName
+                and (descendant:IsA("RemoteEvent") or descendant:IsA("RemoteFunction"))
+            then
+                return descendant
+            end
+        end
+    end
+
+    return nil
+end
+
+local function tryFireGameEvent(name, ...)
+    local remote = findGameEventRemote(name)
+    if not remote then
+        return false
+    end
+
+    if remote:IsA("RemoteEvent") then
+        remote:FireServer(...)
+        return true
+    end
+
+    if remote:IsA("RemoteFunction") then
+        local ok = pcall(function(...)
+            return remote:InvokeServer(...)
+        end, ...)
+        return ok
+    end
+
+    return false
+end
+
+local function callWithArgs(callback, args)
+    args = args or {}
+    local count = #args
+
+    if count == 0 then
+        return callback()
+    elseif count == 1 then
+        return callback(args[1])
+    elseif count == 2 then
+        return callback(args[1], args[2])
+    elseif count == 3 then
+        return callback(args[1], args[2], args[3])
+    elseif count == 4 then
+        return callback(args[1], args[2], args[3], args[4])
+    elseif count == 5 then
+        return callback(args[1], args[2], args[3], args[4], args[5])
+    end
+
+    return callback(args[1], args[2], args[3], args[4], args[5], args[6])
+end
+
+local function clampNumber(value, minValue, maxValue)
+    value = tonumber(value) or 0
+    minValue = tonumber(minValue) or value
+    maxValue = tonumber(maxValue) or value
+
+    if value < minValue then
+        return minValue
+    end
+
+    if value > maxValue then
+        return maxValue
+    end
+
+    return value
+end
+
+local function tryFireGameEventAny(name, argSets)
+    for _, args in ipairs(argSets) do
+        if callWithArgs(function(...)
+            return tryFireGameEvent(name, ...)
+        end, args) then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function fireGameEventAll(name, argSets, delaySeconds)
+    local firedCount = 0
+
+    for _, args in ipairs(argSets) do
+        if callWithArgs(function(...)
+            return tryFireGameEvent(name, ...)
+        end, args) then
+            firedCount = firedCount + 1
+            if delaySeconds and delaySeconds > 0 then
+                task.wait(delaySeconds)
+            end
+        end
+    end
+
+    return firedCount
+end
+
+local function callGameEvent(name, ...)
+    local remote = findGameEventRemote(name)
+    if not remote then
+        return false, nil
+    end
+
+    if remote:IsA("RemoteFunction") then
+        local ok, result = pcall(function(...)
+            return remote:InvokeServer(...)
+        end, ...)
+        return ok, result
+    end
+
+    if remote:IsA("RemoteEvent") then
+        remote:FireServer(...)
+        return true, nil
+    end
+
+    return false, nil
+end
+
+local function trimText(text)
+    return tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function stripStackData(name)
+    local cleaned = tostring(name or "")
+    cleaned = cleaned:gsub("%s*%b[]", "")
+    cleaned = cleaned:gsub("%s+x%d+$", "")
+    cleaned = cleaned:gsub("%s*%(%d+%)$", "")
+    return trimText(cleaned)
+end
+
+local function stripSeedSuffix(name)
+    local cleaned = stripStackData(name)
+    cleaned = cleaned:gsub("%s+[Ss]eeds?$", "")
+    return trimText(cleaned)
+end
+
+local function canonicalizeUuid(value)
+    local text = tostring(value or "")
+    local uuid = text:match("{(%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x)}")
+        or text:match("(%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x)")
+
+    if uuid then
+        return "{" .. uuid:lower() .. "}"
+    end
+
+    return nil
+end
+
+local function uuidCacheKey(uuid)
+    return tostring(uuid or ""):gsub("[{}]", ""):lower()
+end
+
+local function isUuidOnlyName(name)
+    local text = trimText(name)
+    return canonicalizeUuid(text) ~= nil and not text:find("%s")
+end
+
+local function getInstanceUuid(instance)
+    local attributeNames = {
+        "UUID",
+        "Uuid",
+        "uuid",
+        "ItemUUID",
+        "ItemUuid",
+        "PetUUID",
+        "PetUuid",
+    }
+
+    for _, attributeName in ipairs(attributeNames) do
+        local ok, value = pcall(function()
+            return instance:GetAttribute(attributeName)
+        end)
+
+        if ok and value ~= nil and tostring(value) ~= "" then
+            local uuid = canonicalizeUuid(value)
+            if uuid then
+                return uuid
+            end
+
+            return tostring(value)
+        end
+    end
+
+    return canonicalizeUuid(instance.Name)
+end
+
+local function getAttributeText(instance)
+    local parts = {instance.Name, instance.ClassName}
+    local ok, attributes = pcall(function()
+        return instance:GetAttributes()
+    end)
+
+    if ok and type(attributes) == "table" then
+        for key, value in pairs(attributes) do
+            parts[#parts + 1] = tostring(key)
+            parts[#parts + 1] = tostring(value)
+        end
+    end
+
+    for _, descendant in ipairs(instance:GetDescendants()) do
+        parts[#parts + 1] = descendant.Name
+        parts[#parts + 1] = descendant.ClassName
+
+        if descendant:IsA("StringValue")
+            or descendant:IsA("NumberValue")
+            or descendant:IsA("IntValue")
+            or descendant:IsA("BoolValue")
+        then
+            parts[#parts + 1] = tostring(descendant.Value)
+        end
+
+        local okDescAttributes, descAttributes = pcall(function()
+            return descendant:GetAttributes()
+        end)
+
+        if okDescAttributes and type(descAttributes) == "table" then
+            for key, value in pairs(descAttributes) do
+                parts[#parts + 1] = tostring(key)
+                parts[#parts + 1] = tostring(value)
+            end
+        end
+    end
+
+    return table.concat(parts, " "):lower()
+end
+
+local function hasAnyKeyword(text, keywords)
+    for _, keyword in ipairs(keywords) do
+        if text:find(keyword, 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+local function metadataKeyMatchesAny(key, names)
+    local normalized = tostring(key or ""):lower():gsub("[^%w]", "")
+
+    for _, name in ipairs(names) do
+        local wanted = tostring(name or ""):lower():gsub("[^%w]", "")
+        if normalized == wanted
+            or (wanted ~= "name" and wanted ~= "type" and normalized:find(wanted, 1, true))
+        then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function getMetadataTextField(instance, names)
+    local ok, attributes = pcall(function()
+        return instance:GetAttributes()
+    end)
+
+    if ok and type(attributes) == "table" then
+        for key, value in pairs(attributes) do
+            if type(value) == "string" and metadataKeyMatchesAny(key, names) then
+                local cleaned = stripStackData(value)
+                if cleaned ~= "" and not isUuidOnlyName(cleaned) then
+                    return cleaned
+                end
+            end
+        end
+    end
+
+    for _, descendant in ipairs(instance:GetDescendants()) do
+        if descendant:IsA("StringValue") and metadataKeyMatchesAny(descendant.Name, names) then
+            local cleaned = stripStackData(descendant.Value)
+            if cleaned ~= "" and not isUuidOnlyName(cleaned) then
+                return cleaned
+            end
+        end
+    end
+
+    return nil
+end
+
+local KNOWN_EGG_NAMES = {
+    "common egg", "uncommon egg", "rare egg", "legendary egg", "mythical egg",
+    "bug egg", "bee egg", "night egg", "paradise egg", "oasis egg", "anti bee egg",
+    "premium egg", "exotic egg", "dinosaur egg", "primal egg", "zen egg", "gourmet egg",
+}
+
+local function isLikelyEggName(name)
+    local lower = tostring(name or ""):gsub("(%l)(%u)", "%1 %2"):lower()
+    lower = lower:gsub("%s+", " ")
+
+    if lower:find(" pet egg", 1, true)
+        or lower:match("^egg%s")
+        or lower:match("%segg$")
+        or lower == "egg"
+    then
+        return true
+    end
+
+    for _, eggName in ipairs(KNOWN_EGG_NAMES) do
+        if lower == eggName or lower:find(eggName, 1, true) then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function normalizeEggDisplayName(name)
+    local cleaned = stripStackData(tostring(name or ""):gsub("(%l)(%u)", "%1 %2"))
+    if cleaned == "" then
+        return cleaned
+    end
+
+    if not cleaned:lower():find("egg", 1, true) then
+        cleaned = cleaned .. " Egg"
+    end
+
+    return cleaned
+end
+
+local scanReplicatedEggModelOptions
+local scanPetEggRegistryOptions
+
+do
+local function addUniqueOption(list, seen, value)
+    local cleaned = stripStackData(value)
+    if cleaned == "" then
+        return
+    end
+
+    if not seen[cleaned] then
+        seen[cleaned] = true
+        list[#list + 1] = cleaned
+    end
+end
+
+local function addEggOptionFromName(names, seen, value)
+    if isLikelyEggName(value) then
+        addUniqueOption(names, seen, normalizeEggDisplayName(value))
+    end
+end
+
+local PET_REGISTRY_SKIP_NAMES = {
+    common = true,
+    uncommon = true,
+    rare = true,
+    legendary = true,
+    mythical = true,
+    divine = true,
+    prismatic = true,
+    chance = true,
+    weight = true,
+    rarity = true,
+    pets = true,
+    rewards = true,
+    pool = true,
+    list = true,
+    data = true,
+}
+
+local function addPetOptionFromRegistry(names, seen, value)
+    local cleaned = stripStackData(value)
+    local lower = cleaned:lower()
+    if cleaned == ""
+        or tonumber(cleaned) ~= nil
+        or PET_REGISTRY_SKIP_NAMES[lower]
+        or isLikelyEggName(cleaned)
+    then
+        return
+    end
+
+    addUniqueOption(names, seen, cleaned)
+end
+
+local function extractPetRegistryValue(value, names, seen, depth, keyHint)
+    if depth > 8 then
+        return
+    end
+
+    if type(value) == "string" then
+        local keyText = tostring(keyHint or ""):lower()
+        if keyText == ""
+            or keyText:find("pet", 1, true)
+            or keyText:find("name", 1, true)
+            or keyText:find("reward", 1, true)
+        then
+            addPetOptionFromRegistry(names, seen, value)
+        end
+        return
+    end
+
+    if type(value) == "table" then
+        for key, childValue in pairs(value) do
+            extractPetRegistryValue(childValue, names, seen, depth + 1, key)
+        end
+        return
+    end
+
+    if type(typeof) == "function" and typeof(value) == "Instance" then
+        for key, attribute in pairs(value:GetAttributes()) do
+            extractPetRegistryValue(attribute, names, seen, depth + 1, key)
+        end
+
+        if value:IsA("StringValue") then
+            extractPetRegistryValue(value.Value, names, seen, depth + 1, value.Name)
+        end
+
+        for _, child in ipairs(value:GetChildren()) do
+            addPetOptionFromRegistry(names, seen, child.Name)
+            extractPetRegistryValue(child, names, seen, depth + 1, child.Name)
+        end
+    end
+end
+
+local function sortedUniqueOptions(names)
+    table.sort(names)
+    return names
+end
+
+scanReplicatedEggModelOptions = function()
+    local names = {}
+    local seen = {}
+    local assets = ReplicatedStorage:FindFirstChild("Assets")
+    local models = assets and assets:FindFirstChild("Models")
+
+    if not models then
+        return names
+    end
+
+    for _, child in ipairs(models:GetChildren()) do
+        addEggOptionFromName(names, seen, child.Name)
+    end
+    for _, descendant in ipairs(models:GetDescendants()) do
+        addEggOptionFromName(names, seen, descendant.Name)
+    end
+
+    return sortedUniqueOptions(names)
+end
+
+local function getPetEggRegistryRoot()
+    local data = ReplicatedStorage:FindFirstChild("Data")
+    local petRegistry = data and data:FindFirstChild("PetRegistry")
+    return petRegistry and petRegistry:FindFirstChild("PetEggs") or nil
+end
+
+scanPetEggRegistryOptions = function()
+    local byEgg = {}
+    local eggNames = {}
+    local eggSeen = {}
+    local root = getPetEggRegistryRoot()
+
+    if not root then
+        return eggNames, byEgg
+    end
+
+    local function addEggPets(eggName, value)
+        local normalizedEgg = normalizeEggDisplayName(eggName)
+        if normalizedEgg == "" then
+            return
+        end
+
+        addUniqueOption(eggNames, eggSeen, normalizedEgg)
+        byEgg[normalizedEgg] = byEgg[normalizedEgg] or {}
+        local petSeen = {}
+        for _, petName in ipairs(byEgg[normalizedEgg]) do
+            petSeen[petName] = true
+        end
+
+        extractPetRegistryValue(value, byEgg[normalizedEgg], petSeen, 0, normalizedEgg)
+        table.sort(byEgg[normalizedEgg])
+    end
+
+    if root:IsA("ModuleScript") then
+        if type(require) == "function" then
+            local ok, registryData = pcall(function()
+                return require(root)
+            end)
+            if ok and type(registryData) == "table" then
+                local function scanRegistryTable(value, depth)
+                    if type(value) ~= "table" or depth > 6 then
+                        return
+                    end
+
+                    for key, childValue in pairs(value) do
+                        if isLikelyEggName(key) then
+                            addEggPets(key, childValue)
+                        else
+                            scanRegistryTable(childValue, depth + 1)
+                        end
+                    end
+                end
+
+                scanRegistryTable(registryData, 0)
+            end
+        end
+    else
+        for _, eggNode in ipairs(root:GetChildren()) do
+            if isLikelyEggName(eggNode.Name) then
+                addEggPets(eggNode.Name, eggNode)
+            end
+        end
+    end
+
+    return sortedUniqueOptions(eggNames), byEgg
+end
+end
+
+local KNOWN_FRUIT_NAMES = {
+    "apple", "avocado", "banana", "beanstalk", "bell pepper", "blood banana",
+    "blueberry", "cacao", "cactus", "candy blossom", "candy sunflower",
+    "carrot", "cauliflower", "coconut", "corn", "cranberry", "cucumber",
+    "daffodil", "dragon fruit", "durian", "eggplant", "feijoa", "grape",
+    "green apple", "kiwi", "lemon", "lime", "loquat", "mango", "mint",
+    "moon blossom", "moon mango", "mushroom", "nectarine", "orange tulip",
+    "papaya", "passionfruit", "peach", "pear", "pepper", "pineapple",
+    "pitcher plant", "prickly pear", "pumpkin", "rafflesia", "raspberry",
+    "rose", "soul fruit", "starfruit", "strawberry", "sugar apple",
+    "tomato", "venus fly trap", "watermelon",
+}
+
+local function isLikelyFruitName(name)
+    local lower = tostring(name or ""):lower()
+    lower = lower:gsub("%s+fruit$", "")
+    for _, fruitName in ipairs(KNOWN_FRUIT_NAMES) do
+        if lower == fruitName or lower:find(fruitName, 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+local function classifyInventoryItem(instance)
+    local rawName = tostring(instance.Name)
+    local displayName = stripStackData(rawName)
+    local lowerRawName = rawName:lower()
+    local lowerName = displayName:lower()
+    local infoText = getAttributeText(instance)
+    local eggMetadataName = getMetadataTextField(instance, {
+        "EggName",
+        "EggType",
+        "PetEgg",
+        "PetEggName",
+        "PetEggType",
+        "ItemName",
+        "DisplayName",
+    })
+
+    if eggMetadataName and isLikelyEggName(eggMetadataName) then
+        return "Eggs", normalizeEggDisplayName(eggMetadataName)
+    end
+
+    if hasAnyKeyword(infoText, {"petegg", "pet egg", "eggname", "eggtype", "egg name", "egg type"})
+        or lowerName:find(" egg", 1, true)
+        or lowerName:match("^egg ")
+        or lowerName:match("egg$")
+        or isLikelyEggName(displayName)
+    then
+        return "Eggs", normalizeEggDisplayName(eggMetadataName or displayName)
+    end
+
+    if hasAnyKeyword(infoText, {"seed", "seedname"}) or lowerName:find(" seed", 1, true) or lowerName:match("^seed ") then
+        return "Seeds", stripSeedSuffix(displayName)
+    end
+
+    local likelyGear = hasAnyKeyword(lowerName, {
+        "gear",
+        "tool",
+        "shovel",
+        "sprinkler",
+        "watering can",
+        "rod",
+        "crate",
+        "cosmetic",
+        "shard",
+        "mutation",
+        "spray",
+        "ticket",
+        "toy",
+        "treat",
+        "lollipop",
+        "wrench",
+        "trowel",
+        "cleaning",
+        "favorite",
+        "harvest tool",
+    })
+
+    if likelyGear then
+        return nil, displayName
+    end
+
+    if hasAnyKeyword(infoText, {"fruit", "crop", "harvest"})
+        or (hasAnyKeyword(infoText, {"plant"}) and isLikelyFruitName(displayName))
+    then
+        return "Fruits", displayName
+    end
+
+    if hasAnyKeyword(infoText, {"pettype", "petuuid", "petdata"})
+        or lowerRawName:find("[age", 1, true)
+        or (lowerRawName:find(" kg", 1, true) and getInstanceUuid(instance) ~= nil)
+    then
+        return "Pets", displayName
+    end
+
+    if instance:IsA("Tool") and isLikelyFruitName(displayName) then
+        return "Fruits", displayName
+    end
+
+    return nil, displayName
+end
+
+local function resetInventory()
+    Inventory.Eggs = {}
+    Inventory.Pets = {}
+    Inventory.InventoryPets = {}
+    Inventory.Fruits = {}
+    Inventory.FarmFruits = {}
+    Inventory.Seeds = {}
+    Inventory.EggsByName = {}
+    Inventory.PetsByName = {}
+    Inventory.InventoryPetsByName = {}
+    Inventory.FruitsByName = {}
+    Inventory.FarmFruitsByName = {}
+    Inventory.SeedsByName = {}
+    Inventory.ItemsByUuid = {}
+end
+
+local function addInventoryEntry(category, displayName, instance)
+    if not category or not displayName or displayName == "" then
+        return
+    end
+
+    local uuid = getInstanceUuid(instance)
+    if category == "Pets" and uuid then
+        local cachedName = PetDisplayNamesByUuid[uuidCacheKey(uuid)]
+        if cachedName and cachedName ~= "" and (isUuidOnlyName(displayName) or tostring(displayName):match("^Placed Pet ")) then
+            displayName = cachedName
+        end
+    end
+
+    local byName = Inventory[category .. "ByName"]
+    local bucket = Inventory[category]
+    if not byName or not bucket then
+        return
+    end
+
+    local entry = byName[displayName]
+    if not entry then
+        entry = {
+            Name = displayName,
+            Instances = {},
+            UUIDs = {},
+        }
+        byName[displayName] = entry
+        bucket[#bucket + 1] = entry
+    end
+
+    entry.Instances[#entry.Instances + 1] = instance
+
+    if uuid then
+        entry.UUIDs[#entry.UUIDs + 1] = uuid
+        if category == "Pets" then
+            Inventory.ItemsByUuid[uuid] = entry
+        elseif category ~= "InventoryPets" then
+            Inventory.ItemsByUuid[uuid] = Inventory.ItemsByUuid[uuid] or entry
+        end
+
+        if category == "Pets" and not isUuidOnlyName(displayName) and not displayName:match("^Placed Pet ") then
+            PetDisplayNamesByUuid[uuidCacheKey(uuid)] = displayName
+        end
+    end
+end
+
+local function scanInventoryContainer(container)
+    if not container then
+        return
+    end
+
+    for _, instance in ipairs(container:GetChildren()) do
+        local category, displayName = classifyInventoryItem(instance)
+        addInventoryEntry(category, displayName, instance)
+        if category == "Pets" then
+            addInventoryEntry("InventoryPets", displayName, instance)
+        end
+    end
+end
+
+local function inventoryKeyMatchesAny(key, names)
+    local normalized = tostring(key or ""):lower():gsub("[^%w]", "")
+
+    for _, name in ipairs(names) do
+        local wanted = tostring(name or ""):lower():gsub("[^%w]", "")
+        if normalized == wanted
+            or (wanted ~= "name" and wanted ~= "type" and normalized:find(wanted, 1, true))
+        then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function getTextField(instance, names)
+    if not instance then
+        return nil
+    end
+
+    local ok, attributes = pcall(function()
+        return instance:GetAttributes()
+    end)
+
+    if ok and type(attributes) == "table" then
+        for key, value in pairs(attributes) do
+            if type(value) == "string" and inventoryKeyMatchesAny(key, names) then
+                local cleaned = stripStackData(value)
+                if cleaned ~= "" and not isUuidOnlyName(cleaned) then
+                    return cleaned
+                end
+            end
+        end
+    end
+
+    for _, child in ipairs(instance:GetChildren()) do
+        if child:IsA("StringValue") and inventoryKeyMatchesAny(child.Name, names) then
+            local cleaned = stripStackData(child.Value)
+            if cleaned ~= "" and not isUuidOnlyName(cleaned) then
+                return cleaned
+            end
+        end
+    end
+
+    return nil
+end
+
+local function getPhysicalPetDisplayName(petModel, uuid)
+    local cachedName = PetDisplayNamesByUuid[uuidCacheKey(uuid)]
+    if cachedName and cachedName ~= "" then
+        return cachedName
+    end
+
+    local directName = getTextField(petModel, {
+        "PetName",
+        "PetType",
+        "DisplayName",
+        "Name",
+        "Type",
+    })
+
+    if directName then
+        PetDisplayNamesByUuid[uuidCacheKey(uuid)] = directName
+        return directName
+    end
+
+    for _, descendant in ipairs(petModel:GetDescendants()) do
+        local descendantName = getTextField(descendant, {
+            "PetName",
+            "PetType",
+            "DisplayName",
+            "Name",
+            "Type",
+        })
+
+        if descendantName then
+            PetDisplayNamesByUuid[uuidCacheKey(uuid)] = descendantName
+            return descendantName
+        end
+    end
+
+    return "Placed Pet " .. tostring(uuid)
+end
+
+local function isLocalPlacedPet(petModel, uuid)
+    local sawOwner = false
+    local ownerNames = {
+        "Owner",
+        "OwnerName",
+        "Player",
+        "PlayerName",
+        "Username",
+        "UserName",
+    }
+    local ownerIds = {
+        "OwnerId",
+        "UserId",
+        "PlayerId",
+        "PlayerUserId",
+    }
+
+    local ok, attributes = pcall(function()
+        return petModel:GetAttributes()
+    end)
+
+    if ok and type(attributes) == "table" then
+        for key, value in pairs(attributes) do
+            if inventoryKeyMatchesAny(key, ownerNames) then
+                sawOwner = true
+                if tostring(value):lower() == localPlayer.Name:lower() then
+                    return true
+                end
+            elseif inventoryKeyMatchesAny(key, ownerIds) then
+                sawOwner = true
+                if tonumber(value) == localPlayer.UserId then
+                    return true
+                end
+            end
+        end
+    end
+
+    return not sawOwner or PetDisplayNamesByUuid[uuidCacheKey(uuid)] ~= nil
+end
+
+local function scanPlacedPets()
+    local petsPhysical = Workspace:FindFirstChild("PetsPhysical")
+    local petMover = petsPhysical and petsPhysical:FindFirstChild("PetMover")
+    if not petMover then
+        return
+    end
+
+    for _, petModel in ipairs(petMover:GetChildren()) do
+        local uuid = getInstanceUuid(petModel)
+        if uuid and isLocalPlacedPet(petModel, uuid) then
+            addInventoryEntry("Pets", getPhysicalPetDisplayName(petModel, uuid), petModel)
+        end
+    end
+end
+
+local function scanFarmFruitOptions()
+    local farmRoot = Workspace:FindFirstChild("Farm")
+    if not farmRoot then
+        return
+    end
+
+    for _, farm in ipairs(farmRoot:GetChildren()) do
+        local important = farm:FindFirstChild("Important")
+        local plants = important and important:FindFirstChild("Plants_Physical")
+
+        if plants then
+            for _, plant in ipairs(plants:GetChildren()) do
+                addInventoryEntry("FarmFruits", stripStackData(plant.Name), plant)
+            end
+        end
+    end
+end
+
+local function scanFarmEggOptions()
+    local farmRoot = Workspace:FindFirstChild("Farm")
+    if not farmRoot then
+        return
+    end
+
+    for _, farm in ipairs(farmRoot:GetChildren()) do
+        local important = farm:FindFirstChild("Important")
+        local objects = important and important:FindFirstChild("Objects_Physical")
+
+        if objects then
+            for _, object in ipairs(objects:GetChildren()) do
+                local metadataName = getMetadataTextField(object, {
+                    "EggName",
+                    "EggType",
+                    "PetEgg",
+                    "PetEggName",
+                    "PetEggType",
+                    "DisplayName",
+                    "Name",
+                    "Type",
+                })
+                local displayName = metadataName or stripStackData(object.Name)
+                local infoText = getAttributeText(object)
+
+                if isLikelyEggName(displayName)
+                    or hasAnyKeyword(infoText, {"petegg", "pet egg", "eggname", "eggtype", "egg name", "egg type"})
+                then
+                    addInventoryEntry("Eggs", normalizeEggDisplayName(displayName), object)
+                end
+            end
+        end
+    end
+end
+
+local function sortedNamesFromByName(byName)
+    local names = {}
+    for name in pairs(byName or {}) do
+        names[#names + 1] = name
+    end
+    table.sort(names)
+    return names
+end
+
+local function mergeSortedOptions(...)
+    local seen = {}
+    local merged = {}
+    for _, options in ipairs({...}) do
+        for _, option in ipairs(options or {}) do
+            if not seen[option] then
+                seen[option] = true
+                merged[#merged + 1] = option
+            end
+        end
+    end
+    table.sort(merged)
+    return merged
+end
+
+local function sortInventoryOptions()
+    for _, category in ipairs({"Eggs", "Pets", "InventoryPets", "Fruits", "FarmFruits", "Seeds"}) do
+        local names = {}
+        local byName = Inventory[category .. "ByName"]
+
+        for name in pairs(byName) do
+            names[#names + 1] = name
+        end
+
+        table.sort(names)
+        OPTIONS[category] = names
+    end
+
+    local modelEggOptions = scanReplicatedEggModelOptions()
+    local registryEggOptions, eggPetsByEgg = scanPetEggRegistryOptions()
+    OPTIONS.Eggs = mergeSortedOptions(modelEggOptions, registryEggOptions, OPTIONS.Eggs)
+    OPTIONS.EggPetsByEgg = eggPetsByEgg
+    OPTIONS.EggRules = OPTIONS.Eggs
+    OPTIONS.PetsToSell = sortedNamesFromByName(Inventory.InventoryPetsByName)
+    OPTIONS.FruitsToSell = sortedNamesFromByName(Inventory.FruitsByName)
+    OPTIONS.FruitsToCollect = mergeSortedOptions(OPTIONS.FarmFruits, OPTIONS.FruitsToSell)
+    OPTIONS.SeedsToPlace = sortedNamesFromByName(Inventory.SeedsByName)
+end
+
+local function scanInventory()
+    resetInventory()
+    scanInventoryContainer(backpack)
+    scanInventoryContainer(character)
+    scanPlacedPets()
+    scanFarmEggOptions()
+    scanFarmFruitOptions()
+    sortInventoryOptions()
+end
+
+scanInventory()
+
+local function addMutationOption(names, seen, value)
+    local name = stripStackData(value)
+    if name ~= "" and not seen[name] then
+        seen[name] = true
+        names[#names + 1] = name
+    end
+end
+
+local function extractMutationOptions(value, names, seen)
+    if type(value) == "string" then
+        addMutationOption(names, seen, value)
+    elseif type(value) == "table" then
+        for key, childValue in pairs(value) do
+            if type(key) == "string" and childValue == true then
+                addMutationOption(names, seen, key)
+            end
+
+            extractMutationOptions(childValue, names, seen)
+        end
+    end
+end
+
+local function refreshMutationOptionsFromRemote()
+    local ok, result = callGameEvent("GetPetMutationNames")
+    if not ok then
+        return false
+    end
+
+    local names = {}
+    local seen = {}
+    extractMutationOptions(result, names, seen)
+    for mutationName in pairs(PET_GIVEN_MUTATIONS) do
+        addMutationOption(names, seen, mutationName)
+    end
+    table.sort(names)
+
+    if #names == 0 then
+        return false
+    end
+
+    OPTIONS.Mutations = names
+    return true
+end
+
+refreshMutationOptionsFromRemote()
+
+local Config = {
+    Main = {
+        AutoLevelPet = false,
+        LevelPets = {},
+        LevelTarget = 100,
+        AutoFeedPet = false,
+        FeedPets = {},
+        HungerThreshold = 50,
+        FeedInterval = 2,
+        AutoKgBoost = false,
+        KgBoosterPets = {},
+        KgTargetPets = {},
+        DetectNonKgedPets = false,
+        PickAndPlace = false,
+        PickAndPlacePets = {},
+        PickUpDelay = 0.6,
+        EquipDelay = 0,
+    },
+    Hatch = {
+        AutoHatch = false,
+        AutoPlaceEggs = false,
+        SelectedEggs = {},
+        EggPriority = {},
+        EggReductionPets = {},
+        HatchSupportPets = {},
+        SealPets = {},
+        AutoSellPets = false,
+        AutoSellWithSeal = false,
+        OnlySellNewlyHatched = true,
+        DontSellFavorited = true,
+        PlaceEggInterval = 8,
+        MaxEggsPlaced = MAX_EGGS_PLACED,
+        EggPlacementMode = "Middle",
+        SellRulesByEgg = {},
+    },
+    Mutation = {
+        AutoMutation = false,
+        SelectedMutations = {},
+        PetsToUse = {},
+        MutationCooldownPets = {},
+        PetMutationGivers = {},
+    },
+    Misc = {
+        AutoFavorite = false,
+        FavoriteMode = "Favorite",
+        FavoritePets = {},
+        AutoPickupFruit = false,
+        FruitsToCollect = {},
+        FruitCollectInterval = 2,
+        AutoSellFruit = false,
+        FruitsToSell = {},
+        AntiLag = false,
+        RemoveTextures = false,
+        AutoBuy = false,
+        ShopsToBuy = {},
+        AutoPlaceSeeds = false,
+        SeedsToPlace = {},
+        WebhookKgLogs = false,
+        WebhookHatchLogs = false,
+        WebhookUrl = "",
+        AutoReconnect = false,
+        AutoRebirth = false,
+    },
+}
+
+local Runtime = {
+    SelectedSellRuleEgg = OPTIONS.EggRules[1] or "",
+    Logs = {},
+    ActiveTab = "Main",
+    Minimized = false,
+    KgBoostIndex = 1,
+    KgBoostCompleted = {},
+    KgLastLoggedByUuid = {},
+    MutationIndex = 1,
+    MutationCooldownIndex = 1,
+    PetMutationGiverIndex = 1,
+    PickAndPlaceIndex = 1,
+    EggReductionIndex = 1,
+    HatchSupportIndex = 1,
+    SealIndex = 1,
+    FavoriteAppliedByUuid = {},
+}
+
+local Actions = {}
+local UIRefresh = {}
+local inventorySummaryLabel
+local queueInventoryRefresh
+
+local function selectedListToText(selected, emptyText)
+    selected = selected or {__order = {}}
+
+    local names = {}
+    for _, name in ipairs(selected.__order or {}) do
+        if selected[name] then
+            names[#names + 1] = name
+        end
+    end
+
+    if #names == 0 then
+        for name, enabled in pairs(selected) do
+            if type(name) ~= "string" or name:sub(1, 2) ~= "__" then
+                if enabled then
+                    names[#names + 1] = name
+                end
+            end
+        end
+        table.sort(names)
+    end
+
+    if #names == 0 then
+        return emptyText or "None"
+    end
+
+    return table.concat(names, ", ")
+end
+
+local function isSelectionMetadataKey(key)
+    return type(key) == "string" and key:sub(1, 2) == "__"
+end
+
+local function selectedTableEnsureUuidKeys(selected)
+    selected.__uuidKeys = selected.__uuidKeys or {}
+    return selected.__uuidKeys
+end
+
+local function selectedTableRememberUuid(selected, uuid)
+    local key = uuid and uuidCacheKey(uuid) or nil
+    if key and key ~= "" then
+        selectedTableEnsureUuidKeys(selected)[key] = true
+    end
+end
+
+local function copyArrayToSelected(options)
+    local selected = {__order = {}, __uuidKeys = {}}
+    for _, option in ipairs(options) do
+        selected.__order[#selected.__order + 1] = option
+    end
+    return selected
+end
+
+local function syncSelectedOptions(selected, options)
+    selected.__order = {}
+
+    local available = {}
+    for _, option in ipairs(options) do
+        selected.__order[#selected.__order + 1] = option
+        available[option] = true
+        if selected[option] == nil then
+            selected[option] = false
+        end
+    end
+
+    for key in pairs(selected) do
+        if not isSelectionMetadataKey(key) and not available[key] then
+            selected[key] = nil
+        end
+    end
+end
+
+local function hasOption(options, value)
+    for _, option in ipairs(options) do
+        if option == value then
+            return true
+        end
+    end
+    return false
+end
+
+local function isSelectedName(selected, name)
+    if not selected or not name then
+        return false
+    end
+
+    return selected[name] == true
+end
+
+local function selectedPetEntries(selected)
+    local entries = {}
+    for _, name in ipairs(selected and selected.__order or {}) do
+        if isSelectedName(selected, name) then
+            local entry = Inventory.PetsByName[name]
+            if entry then
+                entries[#entries + 1] = entry
+            end
+        end
+    end
+    return entries
+end
+
+local function entryHasUuidKey(entry, wantedKey)
+    if not entry or not wantedKey then
+        return false
+    end
+
+    for _, uuid in ipairs(entry.UUIDs or {}) do
+        if uuidCacheKey(uuid) == wantedKey then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function captureSelectedPetUuidKeys(selected)
+    local keys = {}
+
+    for name, enabled in pairs(selected or {}) do
+        if not isSelectionMetadataKey(name) and enabled then
+            local entry = Inventory.PetsByName[name]
+            if entry then
+                for _, uuid in ipairs(entry.UUIDs or {}) do
+                    local key = uuidCacheKey(uuid)
+                    keys[key] = true
+                    selectedTableRememberUuid(selected, uuid)
+
+                    if not isUuidOnlyName(name) and not tostring(name):match("^Placed Pet ") then
+                        PetDisplayNamesByUuid[key] = name
+                    end
+                end
+            else
+                local uuid = canonicalizeUuid(name)
+                if uuid then
+                    local key = uuidCacheKey(uuid)
+                    keys[key] = true
+                    selectedTableRememberUuid(selected, uuid)
+                end
+            end
+        end
+    end
+
+    for key in pairs((type(selected) == "table" and selected.__uuidKeys) or {}) do
+        keys[key] = true
+    end
+
+    return keys
+end
+
+local function syncSelectedPetOptions(selected, options, selectedUuidKeys)
+    syncSelectedOptions(selected, options)
+
+    if not selectedUuidKeys then
+        return
+    end
+
+    selected.__uuidKeys = selectedUuidKeys
+    for _, option in ipairs(options) do
+        local entry = Inventory.PetsByName[option]
+        for key in pairs(selectedUuidKeys) do
+            if entryHasUuidKey(entry, key) then
+                selected[option] = true
+                break
+            end
+        end
+    end
+end
+
+local function nextSelectedPetEntry(selected, runtimeIndexKey, skipEntry)
+    local entries = selectedPetEntries(selected)
+    if #entries == 0 then
+        return nil
+    end
+
+    local startIndex = tonumber(Runtime[runtimeIndexKey]) or 1
+    for offset = 0, #entries - 1 do
+        local index = ((startIndex + offset - 1) % #entries) + 1
+        local entry = entries[index]
+        Runtime[runtimeIndexKey] = (index % #entries) + 1
+
+        if not skipEntry or not skipEntry(entry) then
+            return entry
+        end
+    end
+
+    return nil
+end
+
+local function selectedFruitEntries(selected)
+    local entries = {}
+    for _, name in ipairs(selected and selected.__order or {}) do
+        if isSelectedName(selected, name) then
+            local entry = Inventory.FruitsByName[name]
+            if entry then
+                entries[#entries + 1] = entry
+            end
+        end
+    end
+    return entries
+end
+
+local function selectedFruitCollectEntries(selected)
+    local entries = {}
+    for _, name in ipairs(selected and selected.__order or {}) do
+        if isSelectedName(selected, name) then
+            local entry = Inventory.FarmFruitsByName[name] or Inventory.FruitsByName[name]
+            if entry then
+                entries[#entries + 1] = entry
+            end
+        end
+    end
+    return entries
+end
+
+local function selectedSeedEntries(selected)
+    local entries = {}
+    for _, name in ipairs(selected and selected.__order or {}) do
+        if isSelectedName(selected, name) then
+            local entry = Inventory.SeedsByName[name]
+            if entry then
+                entries[#entries + 1] = entry
+            end
+        end
+    end
+    return entries
+end
+
+local function addUniqueInstance(list, seen, instance)
+    if instance and instance.Parent and not seen[instance] then
+        seen[instance] = true
+        list[#list + 1] = instance
+    end
+end
+
+local function getFruitCollectTargets(entry)
+    local targets = {}
+    local seen = {}
+
+    for _, instance in ipairs(entry and entry.Instances or {}) do
+        if instance and instance:IsDescendantOf(Workspace) then
+            addUniqueInstance(targets, seen, instance)
+
+            for _, child in ipairs(instance:GetChildren()) do
+                local text = getAttributeText(child)
+                if stripStackData(child.Name) == entry.Name or hasAnyKeyword(text, {"fruit", "harvest", "crop"}) then
+                    addUniqueInstance(targets, seen, child)
+                end
+            end
+
+            for _, descendant in ipairs(instance:GetDescendants()) do
+                local text = getAttributeText(descendant)
+                if stripStackData(descendant.Name) == entry.Name or hasAnyKeyword(text, {"fruit", "harvest", "crop"}) then
+                    addUniqueInstance(targets, seen, descendant)
+                end
+            end
+        end
+    end
+
+    return targets
+end
+
+local function firstInstance(entry)
+    if entry and entry.Instances then
+        return entry.Instances[1]
+    end
+    return nil
+end
+
+local function firstToolInstance(entry)
+    for _, instance in ipairs(entry and entry.Instances or {}) do
+        if instance and instance:IsA("Tool") then
+            return instance
+        end
+    end
+    return nil
+end
+
+local function firstUuid(entry)
+    if entry and entry.UUIDs then
+        return entry.UUIDs[1]
+    end
+
+    local instance = firstInstance(entry)
+    return instance and getInstanceUuid(instance) or nil
+end
+
+local function cachePetEntryName(entry)
+    local uuid = firstUuid(entry)
+    if uuid and entry and entry.Name and not isUuidOnlyName(entry.Name) and not tostring(entry.Name):match("^Placed Pet ") then
+        PetDisplayNamesByUuid[uuidCacheKey(uuid)] = entry.Name
+    end
+end
+
+local function getPlacementCFrame(slotIndex)
+    local activeCharacter = localPlayer.Character
+    local root = activeCharacter and activeCharacter:FindFirstChild("HumanoidRootPart")
+
+    if root then
+        local index = math.max(1, tonumber(slotIndex) or 1)
+        local xOffset = (((index - 1) % 4) - 1.5) * 4
+        local zOffset = -6 - (math.floor((index - 1) / 4) * 4)
+        return root.CFrame * CFrame.new(xOffset, 0, zOffset)
+    end
+
+    return CFrame.new(0, 0, 0)
+end
+
+local function readInstanceValue(instance)
+    if not instance then
+        return nil
+    end
+
+    if instance:IsA("ObjectValue") then
+        return instance.Value
+    end
+
+    if instance:IsA("StringValue") or instance:IsA("IntValue") or instance:IsA("NumberValue") then
+        return instance.Value
+    end
+
+    local ok, value = pcall(function()
+        return instance.Value
+    end)
+
+    if ok then
+        return value
+    end
+
+    return nil
+end
+
+local function ownerMatchesLocalPlayer(ownerValue)
+    if ownerValue == localPlayer then
+        return true
+    end
+
+    if type(typeof) == "function" and typeof(ownerValue) == "Instance" then
+        if ownerValue == localPlayer then
+            return true
+        end
+
+        return ownerValue.Name == localPlayer.Name
+    end
+
+    local text = tostring(ownerValue or "")
+    return text == localPlayer.Name or tonumber(text) == localPlayer.UserId
+end
+
+local function isLocalFarm(farm)
+    local important = farm and farm:FindFirstChild("Important")
+    local data = important and important:FindFirstChild("Data")
+    local owner = data and data:FindFirstChild("Owner")
+
+    if owner and ownerMatchesLocalPlayer(readInstanceValue(owner)) then
+        return true
+    end
+
+    local ok, ownerAttribute = pcall(function()
+        return data and data:GetAttribute("Owner")
+    end)
+
+    return ok and ownerMatchesLocalPlayer(ownerAttribute)
+end
+
+local function getLocalFarm()
+    local farmRoot = Workspace:FindFirstChild("Farm")
+    if not farmRoot then
+        return nil
+    end
+
+    for _, farm in ipairs(farmRoot:GetChildren()) do
+        if isLocalFarm(farm) then
+            return farm
+        end
+    end
+
+    return nil
+end
+
+local function firstBasePart(instance)
+    if not instance then
+        return nil
+    end
+
+    if instance:IsA("BasePart") then
+        return instance
+    end
+
+    if instance:IsA("Model") then
+        return instance.PrimaryPart or instance:FindFirstChildWhichIsA("BasePart", true)
+    end
+
+    return instance:FindFirstChildWhichIsA("BasePart", true)
+end
+
+local function getEggPlantLocation()
+    local farm = getLocalFarm()
+    local important = farm and farm:FindFirstChild("Important")
+    local plantLocations = important and important:FindFirstChild("Plant_Locations")
+    if not plantLocations then
+        return nil
+    end
+
+    local children = plantLocations:GetChildren()
+    return children[2] or children[1]
+end
+
+local function pointInPart(part, mode, slotIndex)
+    if not part then
+        return nil
+    end
+
+    local function clampAxis(value, halfSize)
+        local limit = math.max(0, halfSize - 1)
+        return clampNumber(value, -limit, limit)
+    end
+
+    local normalizedMode = tostring(mode or "Middle"):lower()
+    local index = math.max(1, tonumber(slotIndex) or 1)
+    local halfSize = part.Size * 0.5
+    local localX = 0
+    local localZ = 0
+
+    if normalizedMode == "random" then
+        localX = (math.random() - 0.5) * math.max(0, part.Size.X - 2)
+        localZ = (math.random() - 0.5) * math.max(0, part.Size.Z - 2)
+    elseif normalizedMode == "near player" then
+        local activeCharacter = localPlayer.Character
+        local root = activeCharacter and activeCharacter:FindFirstChild("HumanoidRootPart")
+        if root then
+            local localPosition = part.CFrame:PointToObjectSpace(root.Position)
+            localX = localPosition.X
+            localZ = localPosition.Z
+        end
+    end
+
+    if normalizedMode ~= "random" then
+        local columns = math.max(1, math.floor(math.max(4, part.Size.X - 2) / 3))
+        local row = math.floor((index - 1) / columns)
+        local column = (index - 1) % columns
+        localX = localX + (column - ((columns - 1) / 2)) * 3
+        localZ = localZ + row * 3
+    else
+        localX = localX + (((index - 1) % 3) - 1) * 0.75
+        localZ = localZ + ((math.floor((index - 1) / 3) % 3) - 1) * 0.75
+    end
+
+    return (part.CFrame * CFrame.new(
+        clampAxis(localX, halfSize.X),
+        0,
+        clampAxis(localZ, halfSize.Z)
+    )).Position
+end
+
+local function getEggPlacementCFrame(slotIndex)
+    local location = getEggPlantLocation()
+    local part = firstBasePart(location)
+    local position = pointInPart(part, Config.Hatch.EggPlacementMode, slotIndex)
+
+    if position then
+        return CFrame.new(position)
+    end
+
+    return getPlacementCFrame(slotIndex)
+end
+
+local function getFarmPhysicalContainer(name)
+    local farmRoot = Workspace:FindFirstChild("Farm")
+    if not farmRoot then
+        return nil
+    end
+
+    local localFarm = getLocalFarm()
+    local localImportant = localFarm and localFarm:FindFirstChild("Important")
+    local localContainer = localImportant and localImportant:FindFirstChild(name)
+    if localContainer then
+        return localContainer
+    end
+
+    for _, farm in ipairs(farmRoot:GetChildren()) do
+        local important = farm:FindFirstChild("Important")
+        local container = important and important:FindFirstChild(name)
+
+        if container then
+            return container
+        end
+    end
+
+    return nil
+end
+
+local function getPhysicalEggName(instance)
+    local name = stripStackData(instance and instance.Name or "")
+    local ok, attributes = pcall(function()
+        return instance:GetAttributes()
+    end)
+
+    if ok and type(attributes) == "table" then
+        for _, key in ipairs({"EggName", "EggType", "Name", "Type"}) do
+            local value = attributes[key]
+            if type(value) == "string" and value ~= "" then
+                return normalizeEggDisplayName(value)
+            end
+        end
+    end
+
+    return normalizeEggDisplayName(name)
+end
+
+local function findHatchableEggObject()
+    local objects = getFarmPhysicalContainer("Objects_Physical")
+    if not objects then
+        return nil
+    end
+
+    local priority = {}
+    for _, eggName in ipairs(Config.Hatch.EggPriority) do
+        priority[#priority + 1] = eggName
+    end
+    for _, eggName in ipairs(Config.Hatch.SelectedEggs.__order or {}) do
+        if Config.Hatch.SelectedEggs[eggName] and not hasOption(priority, eggName) then
+            priority[#priority + 1] = eggName
+        end
+    end
+
+    for _, wantedEgg in ipairs(priority) do
+        for _, object in ipairs(objects:GetChildren()) do
+            local objectName = getPhysicalEggName(object)
+            if objectName == wantedEgg or tostring(object.Name):find(wantedEgg, 1, true) then
+                return object
+            end
+        end
+    end
+
+    return objects:GetChildren()[1]
+end
+
+local function equipToolInstance(instance)
+    if not instance or not instance:IsA("Tool") then
+        return false
+    end
+
+    local activeCharacter = localPlayer.Character
+    local humanoid = activeCharacter and activeCharacter:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        humanoid:EquipTool(instance)
+        return true
+    end
+
+    return false
+end
+
+local function isCooldownKey(key)
+    local normalized = tostring(key or ""):lower():gsub("[^%w]", "")
+    return normalized:find("cooldown", 1, true)
+        or normalized:find("remaining", 1, true)
+        or normalized:find("timeleft", 1, true)
+        or normalized:find("duration", 1, true)
+end
+
+local function parseCooldownValue(value)
+    if type(value) == "number" then
+        return value
+    end
+
+    if type(value) == "string" then
+        return tonumber(value)
+    end
+
+    if type(value) ~= "table" then
+        return nil
+    end
+
+    local firstNumber
+    for key, childValue in pairs(value) do
+        local parsed = parseCooldownValue(childValue)
+        if parsed ~= nil then
+            if isCooldownKey(key) then
+                return parsed
+            end
+
+            firstNumber = firstNumber or parsed
+        end
+    end
+
+    return firstNumber
+end
+
+local function getPetCooldownSeconds(uuid)
+    if not uuid then
+        return nil
+    end
+
+    local ok, result = callGameEvent("GetPetCooldown", uuid)
+    if not ok then
+        return nil
+    end
+
+    local cooldown = parseCooldownValue(result)
+    if cooldown == nil then
+        return nil
+    end
+
+    return math.max(0, cooldown)
+end
+
+local function waitForPetAbilityFinished(uuid, petInstance)
+    local env = (type(getgenv) == "function" and getgenv()) or _G
+    local checker = type(env) == "table" and env.GAG_IsPetAbilityFinished or nil
+    local hasChecker = type(checker) == "function"
+    local hasCooldownRemote = findGameEventRemote("GetPetCooldown") ~= nil
+
+    if not hasChecker and not hasCooldownRemote then
+        return true
+    end
+
+    local started = os.clock()
+    while true do
+        if hasChecker then
+            local ok, finished = pcall(checker, uuid, petInstance)
+            if ok and finished then
+                return true
+            end
+        else
+            local cooldown = getPetCooldownSeconds(uuid)
+            if cooldown == nil or cooldown <= 0 then
+                return true
+            end
+        end
+
+        if os.clock() - started > 30 then
+            return false
+        end
+
+        task.wait(0.1)
+    end
+
+    return false
+end
+
+local function normalizeLookupKey(value)
+    return tostring(value or ""):lower():gsub("[^%w]", "")
+end
+
+local function keyMatchesAny(key, names)
+    local normalized = normalizeLookupKey(key)
+    for _, name in ipairs(names) do
+        local wanted = normalizeLookupKey(name)
+        if normalized == wanted or normalized:find(wanted, 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+local function keyHasAny(key, names)
+    local normalized = normalizeLookupKey(key)
+    for _, name in ipairs(names) do
+        if normalized:find(normalizeLookupKey(name), 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+local function readNumericField(root, names, excludedNames)
+    if not root then
+        return nil
+    end
+
+    excludedNames = excludedNames or {}
+
+    local okAttributes, attributes = pcall(function()
+        return root:GetAttributes()
+    end)
+
+    if okAttributes and type(attributes) == "table" then
+        for key, value in pairs(attributes) do
+            if type(value) == "number" and keyMatchesAny(key, names) and not keyHasAny(key, excludedNames) then
+                return value
+            end
+        end
+    end
+
+    local function readInstanceValue(instance)
+        if not instance then
+            return nil
+        end
+
+        if (instance:IsA("NumberValue") or instance:IsA("IntValue"))
+            and keyMatchesAny(instance.Name, names)
+            and not keyHasAny(instance.Name, excludedNames)
+        then
+            return instance.Value
+        end
+
+        return nil
+    end
+
+    local directValue = readInstanceValue(root)
+    if directValue ~= nil then
+        return directValue
+    end
+
+    for _, child in ipairs(root:GetChildren()) do
+        local value = readInstanceValue(child)
+        if value ~= nil then
+            return value
+        end
+    end
+
+    for _, descendant in ipairs(root:GetDescendants()) do
+        local value = readInstanceValue(descendant)
+        if value ~= nil then
+            return value
+        end
+    end
+
+    return nil
+end
+
+local function readBooleanField(root, names)
+    if not root then
+        return nil
+    end
+
+    local okAttributes, attributes = pcall(function()
+        return root:GetAttributes()
+    end)
+
+    if okAttributes and type(attributes) == "table" then
+        for key, value in pairs(attributes) do
+            if type(value) == "boolean" and keyMatchesAny(key, names) then
+                return value
+            end
+        end
+    end
+
+    local function readInstanceValue(instance)
+        if instance and instance:IsA("BoolValue") and keyMatchesAny(instance.Name, names) then
+            return instance.Value
+        end
+        return nil
+    end
+
+    local directValue = readInstanceValue(root)
+    if directValue ~= nil then
+        return directValue
+    end
+
+    for _, child in ipairs(root:GetChildren()) do
+        local value = readInstanceValue(child)
+        if value ~= nil then
+            return value
+        end
+    end
+
+    for _, descendant in ipairs(root:GetDescendants()) do
+        local value = readInstanceValue(descendant)
+        if value ~= nil then
+            return value
+        end
+    end
+
+    return nil
+end
+
+local function findPhysicalPetByUuid(uuid)
+    if not uuid then
+        return nil
+    end
+
+    local petsPhysical = Workspace:FindFirstChild("PetsPhysical")
+    local petMover = petsPhysical and petsPhysical:FindFirstChild("PetMover")
+    if not petMover then
+        return nil
+    end
+
+    local compactUuid = tostring(uuid):gsub("[{}]", "")
+    return petMover:FindFirstChild(tostring(uuid))
+        or petMover:FindFirstChild("{" .. compactUuid .. "}")
+        or petMover:FindFirstChild(compactUuid)
+end
+
+local function getPetHungerPercent(entry)
+    local uuid = firstUuid(entry)
+    local roots = {
+        firstInstance(entry),
+        findPhysicalPetByUuid(uuid),
+    }
+
+    for _, root in ipairs(roots) do
+        local current = readNumericField(root, {"Hunger", "CurrentHunger", "Food", "Satiety"}, {"Max", "Capacity"})
+        if current ~= nil then
+            local maxValue = readNumericField(root, {"MaxHunger", "HungerMax", "MaxFood", "FoodCapacity"})
+
+            if maxValue and maxValue > 0 then
+                return clampNumber((current / maxValue) * 100, 0, 100)
+            end
+
+            if current <= 1 then
+                return clampNumber(current * 100, 0, 100)
+            end
+
+            return clampNumber(current, 0, 100)
+        end
+    end
+
+    return nil
+end
+
+Config.Hatch.SelectedEggs = copyArrayToSelected(OPTIONS.Eggs)
+Config.Hatch.EggPriority = OPTIONS.Eggs[1] and {OPTIONS.Eggs[1]} or {}
+if Runtime.SelectedSellRuleEgg ~= "" then
+    Config.Hatch.SellRulesByEgg[Runtime.SelectedSellRuleEgg] = copyArrayToSelected(OPTIONS.EggPetsByEgg[Runtime.SelectedSellRuleEgg] or {})
+end
+Config.Hatch.EggReductionPets = copyArrayToSelected(OPTIONS.Pets)
+Config.Hatch.HatchSupportPets = copyArrayToSelected(OPTIONS.Pets)
+Config.Hatch.SealPets = copyArrayToSelected(OPTIONS.Pets)
+Config.Main.LevelPets = copyArrayToSelected(OPTIONS.Pets)
+Config.Main.FeedPets = copyArrayToSelected(OPTIONS.Pets)
+Config.Main.KgBoosterPets = copyArrayToSelected(OPTIONS.Pets)
+Config.Main.KgTargetPets = copyArrayToSelected(OPTIONS.Pets)
+Config.Main.PickAndPlacePets = copyArrayToSelected(OPTIONS.Pets)
+Config.Mutation.SelectedMutations = copyArrayToSelected(OPTIONS.Mutations)
+Config.Mutation.PetsToUse = copyArrayToSelected(OPTIONS.Pets)
+Config.Mutation.MutationCooldownPets = copyArrayToSelected(OPTIONS.Pets)
+Config.Mutation.PetMutationGivers = copyArrayToSelected(OPTIONS.Pets)
+Config.Misc.FavoritePets = copyArrayToSelected(OPTIONS.Pets)
+Config.Misc.FruitsToCollect = copyArrayToSelected(OPTIONS.FruitsToCollect)
+Config.Misc.FruitsToSell = copyArrayToSelected(OPTIONS.FruitsToSell)
+Config.Misc.ShopsToBuy = copyArrayToSelected(OPTIONS.Shops)
+Config.Misc.SeedsToPlace = copyArrayToSelected(OPTIONS.SeedsToPlace)
+
+local Theme = {
+    Background = Color3.fromRGB(12, 15, 21),
+    Window = Color3.fromRGB(20, 24, 33),
+    Nav = Color3.fromRGB(16, 20, 28),
+    Panel = Color3.fromRGB(29, 35, 47),
+    PanelAlt = Color3.fromRGB(36, 44, 58),
+    Input = Color3.fromRGB(13, 17, 24),
+    Stroke = Color3.fromRGB(78, 92, 113),
+    Text = Color3.fromRGB(244, 248, 252),
+    Muted = Color3.fromRGB(169, 181, 199),
+    ActiveText = Color3.fromRGB(7, 18, 19),
+    Accent = Color3.fromRGB(72, 214, 198),
+    AccentSoft = Color3.fromRGB(40, 82, 83),
+    AccentAlt = Color3.fromRGB(241, 184, 72),
+    Danger = Color3.fromRGB(225, 91, 115),
+    Off = Color3.fromRGB(64, 75, 92),
+}
+
+local WINDOW_WIDTH = 980
+local WINDOW_HEIGHT = 650
+local TOPBAR_HEIGHT = 52
+local NAV_WIDTH = 194
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "GAGMainUI"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = getGuiParent()
+
+local window = Instance.new("Frame")
+window.Name = "Window"
+window.AnchorPoint = Vector2.new(0.5, 0.5)
+window.Position = UDim2.fromScale(0.5, 0.5)
+window.Size = UDim2.fromOffset(WINDOW_WIDTH, WINDOW_HEIGHT)
+window.BackgroundColor3 = Theme.Window
+window.BorderSizePixel = 0
+window.Parent = screenGui
+
+local windowCorner = Instance.new("UICorner")
+windowCorner.CornerRadius = UDim.new(0, 10)
+windowCorner.Parent = window
+
+local windowStroke = Instance.new("UIStroke")
+windowStroke.Color = Theme.Stroke
+windowStroke.Thickness = 1
+windowStroke.Parent = window
+
+local windowGradient = Instance.new("UIGradient")
+windowGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(24, 29, 40)),
+    ColorSequenceKeypoint.new(1, Theme.Window),
+})
+windowGradient.Rotation = 90
+windowGradient.Parent = window
+
+local topbar = Instance.new("Frame")
+topbar.Name = "Topbar"
+topbar.BackgroundColor3 = Theme.Background
+topbar.BorderSizePixel = 0
+topbar.Size = UDim2.new(1, 0, 0, TOPBAR_HEIGHT)
+topbar.Parent = window
+
+local topbarCorner = Instance.new("UICorner")
+topbarCorner.CornerRadius = UDim.new(0, 10)
+topbarCorner.Parent = topbar
+
+local topbarAccent = Instance.new("Frame")
+topbarAccent.Name = "AccentLine"
+topbarAccent.BackgroundColor3 = Theme.Accent
+topbarAccent.BackgroundTransparency = 0.08
+topbarAccent.BorderSizePixel = 0
+topbarAccent.Position = UDim2.new(0, 0, 1, -2)
+topbarAccent.Size = UDim2.new(1, 0, 0, 2)
+topbarAccent.Parent = topbar
+
+local title = Instance.new("TextLabel")
+title.Name = "Title"
+title.BackgroundTransparency = 1
+title.Position = UDim2.fromOffset(18, 0)
+title.Size = UDim2.new(1, -320, 1, 0)
+title.Font = Enum.Font.GothamBold
+title.Text = "GAG Main"
+title.TextColor3 = Theme.Text
+title.TextSize = 18
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = topbar
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Name = "Status"
+statusLabel.BackgroundColor3 = Theme.PanelAlt
+statusLabel.BackgroundTransparency = 0
+statusLabel.AnchorPoint = Vector2.new(1, 0.5)
+statusLabel.Position = UDim2.new(1, -86, 0.5, 0)
+statusLabel.Size = UDim2.fromOffset(178, 26)
+statusLabel.Font = Enum.Font.GothamMedium
+statusLabel.Text = "Idle"
+statusLabel.TextColor3 = Theme.Muted
+statusLabel.TextSize = 12
+statusLabel.TextXAlignment = Enum.TextXAlignment.Center
+statusLabel.Parent = topbar
+
+local statusCorner = Instance.new("UICorner")
+statusCorner.CornerRadius = UDim.new(0, 6)
+statusCorner.Parent = statusLabel
+
+local statusStroke = Instance.new("UIStroke")
+statusStroke.Color = Color3.fromRGB(54, 65, 82)
+statusStroke.Thickness = 1
+statusStroke.Parent = statusLabel
+
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Name = "Minimize"
+minimizeBtn.AnchorPoint = Vector2.new(1, 0.5)
+minimizeBtn.Position = UDim2.new(1, -48, 0.5, 0)
+minimizeBtn.Size = UDim2.fromOffset(32, 30)
+minimizeBtn.BackgroundColor3 = Theme.PanelAlt
+minimizeBtn.BorderSizePixel = 0
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.Text = "-"
+minimizeBtn.TextColor3 = Theme.Text
+minimizeBtn.TextSize = 18
+minimizeBtn.Parent = topbar
+
+local minimizeCorner = Instance.new("UICorner")
+minimizeCorner.CornerRadius = UDim.new(0, 6)
+minimizeCorner.Parent = minimizeBtn
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Name = "Close"
+closeBtn.AnchorPoint = Vector2.new(1, 0.5)
+closeBtn.Position = UDim2.new(1, -12, 0.5, 0)
+closeBtn.Size = UDim2.fromOffset(32, 30)
+closeBtn.BackgroundColor3 = Theme.Danger
+closeBtn.BorderSizePixel = 0
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.Text = "x"
+closeBtn.TextColor3 = Theme.Text
+closeBtn.TextSize = 14
+closeBtn.Parent = topbar
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 6)
+closeCorner.Parent = closeBtn
+
+local body = Instance.new("Frame")
+body.Name = "Body"
+body.BackgroundTransparency = 1
+body.Position = UDim2.fromOffset(0, TOPBAR_HEIGHT)
+body.Size = UDim2.new(1, 0, 1, -TOPBAR_HEIGHT)
+body.Parent = window
+
+local nav = Instance.new("Frame")
+nav.Name = "Nav"
+nav.BackgroundColor3 = Theme.Nav
+nav.BorderSizePixel = 0
+nav.Size = UDim2.new(0, NAV_WIDTH, 1, 0)
+nav.Parent = body
+
+local navPadding = Instance.new("UIPadding")
+navPadding.PaddingTop = UDim.new(0, 14)
+navPadding.PaddingLeft = UDim.new(0, 12)
+navPadding.PaddingRight = UDim.new(0, 12)
+navPadding.Parent = nav
+
+local navLayout = Instance.new("UIListLayout")
+navLayout.Padding = UDim.new(0, 9)
+navLayout.SortOrder = Enum.SortOrder.LayoutOrder
+navLayout.Parent = nav
+
+local content = Instance.new("Frame")
+content.Name = "Content"
+content.BackgroundTransparency = 1
+content.Position = UDim2.fromOffset(NAV_WIDTH, 0)
+content.Size = UDim2.new(1, -NAV_WIDTH, 1, 0)
+content.Parent = body
+
+local pages = {}
+local navButtons = {}
+local logList
+
+local function log(message)
+    local line = os.date("%H:%M:%S") .. "  " .. tostring(message)
+    Runtime.Logs[#Runtime.Logs + 1] = line
+    if #Runtime.Logs > 120 then
+        table.remove(Runtime.Logs, 1)
+    end
+
+    if logList then
+        logList.Text = table.concat(Runtime.Logs, "\n")
+    end
+
+    print("[GAG Main] " .. tostring(message))
+end
+
+local function setStatus(text)
+    statusLabel.Text = tostring(text)
+end
+
+local function sendWebhookPayload(payload)
+    local url = trimText(Config.Misc.WebhookUrl)
+    if url == "" then
+        return false
+    end
+
+    local body = HttpService:JSONEncode(payload)
+    local env = (type(getgenv) == "function" and getgenv()) or _G
+    local requestFn = type(env) == "table" and (env.request or env.http_request or env.httpRequest) or nil
+
+    if not requestFn and type(syn) == "table" then
+        requestFn = syn.request
+    end
+
+    if type(requestFn) == "function" then
+        local ok = pcall(requestFn, {
+            Url = url,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json",
+            },
+            Body = body,
+        })
+        return ok
+    end
+
+    local ok = pcall(function()
+        HttpService:PostAsync(url, body, Enum.HttpContentType.ApplicationJson, false)
+    end)
+    return ok
+end
+
+local function sendKgWebhook(entry, oldKg, newKg)
+    if not Config.Misc.WebhookKgLogs then
+        return
+    end
+
+    local petName = entry and entry.Name or "Pet"
+    local description = ("%s reached %.1f KG"):format(tostring(petName), newKg)
+    if oldKg then
+        description = ("%s went from %.1f KG to %.1f KG"):format(tostring(petName), oldKg, newKg)
+    end
+
+    sendWebhookPayload({
+        username = "GAG Main",
+        embeds = {{
+            title = "KG Boost Update",
+            description = description,
+            color = 4115621,
+            fields = {
+                {
+                    name = "Target",
+                    value = ("%.1f KG"):format(KG_BOOST_TARGET_KG),
+                    inline = true,
+                },
+                {
+                    name = "Player",
+                    value = localPlayer.Name,
+                    inline = true,
+                },
+            },
+        }},
+    })
+end
+
+local function sendHatchWebhook(eggName, petEntry)
+    if not Config.Misc.WebhookHatchLogs then
+        return
+    end
+
+    sendWebhookPayload({
+        username = "GAG Main",
+        embeds = {{
+            title = "Pet Hatched",
+            description = ("%s hatched from %s"):format(
+                tostring(petEntry and petEntry.Name or "Unknown pet"),
+                tostring(eggName or "an egg")
+            ),
+            color = 15183616,
+            fields = {
+                {
+                    name = "Player",
+                    value = localPlayer.Name,
+                    inline = true,
+                },
+            },
+        }},
+    })
+end
+
+local function makeCorner(parent, radius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, radius or 6)
+    corner.Parent = parent
+    return corner
+end
+
+local function makeStroke(parent, color, thickness)
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = color or Theme.Stroke
+    stroke.Thickness = thickness or 1
+    stroke.Parent = parent
+    return stroke
+end
+
+local function makePadding(parent, amount)
+    local padding = Instance.new("UIPadding")
+    padding.PaddingTop = UDim.new(0, amount)
+    padding.PaddingBottom = UDim.new(0, amount)
+    padding.PaddingLeft = UDim.new(0, amount)
+    padding.PaddingRight = UDim.new(0, amount)
+    padding.Parent = parent
+    return padding
+end
+
+local function createPage(name)
+    local page = Instance.new("ScrollingFrame")
+    page.Name = name .. "Page"
+    page.BackgroundTransparency = 1
+    page.BorderSizePixel = 0
+    page.Position = UDim2.fromOffset(20, 16)
+    page.Size = UDim2.new(1, -40, 1, -32)
+    page.ScrollBarThickness = 5
+    page.ScrollBarImageColor3 = Theme.Accent
+    page.CanvasSize = UDim2.fromOffset(0, 0)
+    page.Visible = false
+    page.Parent = content
+
+    local padding = Instance.new("UIPadding")
+    padding.PaddingBottom = UDim.new(0, 12)
+    padding.Parent = page
+
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 12)
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Parent = page
+
+    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        page.CanvasSize = UDim2.fromOffset(0, layout.AbsoluteContentSize.Y + 20)
+    end)
+
+    pages[name] = page
+    return page
+end
+
+local function switchTab(name)
+    Runtime.ActiveTab = name
+
+    for pageName, page in pairs(pages) do
+        page.Visible = pageName == name
+    end
+
+    for buttonName, button in pairs(navButtons) do
+        local active = buttonName == name
+        button.BackgroundColor3 = active and Theme.Accent or Theme.Panel
+        button.TextColor3 = active and Theme.ActiveText or Theme.Text
+    end
+end
+
+local function createNavButton(name, label, order)
+    local button = Instance.new("TextButton")
+    button.Name = name .. "Tab"
+    button.LayoutOrder = order
+    button.Size = UDim2.new(1, 0, 0, 44)
+    button.BackgroundColor3 = Theme.Panel
+    button.BorderSizePixel = 0
+    button.AutoButtonColor = true
+    button.Font = Enum.Font.GothamBold
+    button.Text = label
+    button.TextColor3 = Theme.Text
+    button.TextSize = 14
+    button.TextXAlignment = Enum.TextXAlignment.Left
+    button.TextTruncate = Enum.TextTruncate.AtEnd
+    button.Parent = nav
+
+    makeCorner(button, 8)
+    makeStroke(button, Color3.fromRGB(43, 52, 68), 1)
+    makePadding(button, 14)
+    navButtons[name] = button
+
+    button.MouseButton1Click:Connect(function()
+        switchTab(name)
+    end)
+
+    return button
+end
+
+local function createSection(parent, titleText)
+    local section = Instance.new("Frame")
+    section.Name = titleText:gsub("%s+", "") .. "Section"
+    section.BackgroundColor3 = Theme.Panel
+    section.BorderSizePixel = 0
+    section.Size = UDim2.new(1, -4, 0, 10)
+    section.AutomaticSize = Enum.AutomaticSize.Y
+    section.Parent = parent
+
+    makeCorner(section, 10)
+    makeStroke(section, Theme.Stroke, 1)
+    makePadding(section, 16)
+
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 12)
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Parent = section
+
+    local heading = Instance.new("TextLabel")
+    heading.Name = "Heading"
+    heading.BackgroundTransparency = 1
+    heading.Size = UDim2.new(1, 0, 0, 24)
+    heading.Font = Enum.Font.GothamBold
+    heading.Text = titleText
+    heading.TextColor3 = Theme.Accent
+    heading.TextSize = 16
+    heading.TextXAlignment = Enum.TextXAlignment.Left
+    heading.Parent = section
+
+    return section
+end
+
+local function createRow(parent, height)
+    local row = Instance.new("Frame")
+    row.BackgroundColor3 = Theme.PanelAlt
+    row.BorderSizePixel = 0
+    row.Size = UDim2.new(1, 0, 0, height or 46)
+    row.Parent = parent
+    makeCorner(row, 8)
+    makeStroke(row, Color3.fromRGB(50, 61, 78), 1)
+    return row
+end
+
+local function createToggle(parent, text, default, callback)
+    local row = createRow(parent, 48)
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Position = UDim2.fromOffset(14, 0)
+    label.Size = UDim2.new(1, -86, 1, 0)
+    label.Font = Enum.Font.GothamMedium
+    label.Text = text
+    label.TextColor3 = Theme.Text
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextTruncate = Enum.TextTruncate.AtEnd
+    label.Parent = row
+
+    local button = Instance.new("TextButton")
+    button.AnchorPoint = Vector2.new(1, 0.5)
+    button.Position = UDim2.new(1, -14, 0.5, 0)
+    button.Size = UDim2.fromOffset(54, 26)
+    button.BackgroundColor3 = default and Theme.Accent or Theme.Off
+    button.BorderSizePixel = 0
+    button.Font = Enum.Font.GothamBold
+    button.Text = default and "ON" or "OFF"
+    button.TextColor3 = default and Color3.fromRGB(14, 18, 24) or Theme.Text
+    button.TextSize = 11
+    button.Parent = row
+    makeCorner(button, 7)
+
+    local enabled = default == true
+    local function setEnabled(value, fire)
+        enabled = value == true
+        button.Text = enabled and "ON" or "OFF"
+        button.TextColor3 = enabled and Color3.fromRGB(14, 18, 24) or Theme.Text
+        TweenService:Create(button, TweenInfo.new(0.12), {
+            BackgroundColor3 = enabled and Theme.Accent or Theme.Off,
+        }):Play()
+
+        if fire and callback then
+            callback(enabled)
+        end
+    end
+
+    button.MouseButton1Click:Connect(function()
+        setEnabled(not enabled, true)
+    end)
+
+    row.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            setEnabled(not enabled, true)
+        end
+    end)
+
+    return setEnabled
+end
+
+local function createButton(parent, text, callback)
+    local button = Instance.new("TextButton")
+    button.BackgroundColor3 = Theme.AccentAlt
+    button.BorderSizePixel = 0
+    button.Size = UDim2.new(1, 0, 0, 42)
+    button.Font = Enum.Font.GothamBold
+    button.Text = text
+    button.TextColor3 = Color3.fromRGB(18, 21, 28)
+    button.TextSize = 13
+    button.Parent = parent
+
+    makeCorner(button, 8)
+
+    button.MouseButton1Click:Connect(function()
+        if callback then
+            callback()
+        end
+    end)
+
+    return button
+end
+
+local function createTextInput(parent, labelText, placeholder, default, callback)
+    local row = createRow(parent, 48)
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Position = UDim2.fromOffset(14, 0)
+    label.Size = UDim2.new(0.38, -14, 1, 0)
+    label.Font = Enum.Font.GothamMedium
+    label.Text = labelText
+    label.TextColor3 = Theme.Text
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextTruncate = Enum.TextTruncate.AtEnd
+    label.Parent = row
+
+    local box = Instance.new("TextBox")
+    box.AnchorPoint = Vector2.new(1, 0.5)
+    box.Position = UDim2.new(1, -12, 0.5, 0)
+    box.Size = UDim2.new(0.62, -8, 0, 32)
+    box.BackgroundColor3 = Theme.Input
+    box.BorderSizePixel = 0
+    box.ClearTextOnFocus = false
+    box.Font = Enum.Font.Gotham
+    box.PlaceholderText = placeholder or ""
+    box.PlaceholderColor3 = Theme.Muted
+    box.Text = tostring(default or "")
+    box.TextColor3 = Theme.Text
+    box.TextSize = 12
+    box.TextXAlignment = Enum.TextXAlignment.Left
+    box.Parent = row
+
+    makeCorner(box, 6)
+    makePadding(box, 8)
+
+    box.FocusLost:Connect(function()
+        if callback then
+            callback(box.Text)
+        end
+    end)
+
+    return box
+end
+
+local function optionListHeight(optionCount)
+    return math.min(math.max(optionCount or 1, 1) * 34 + 10, 240)
+end
+
+local function createDropdown(parent, labelText, options, default, callback)
+    local currentOptions = options or {}
+    local currentValue = default or currentOptions[1]
+
+    local container = Instance.new("Frame")
+    container.BackgroundTransparency = 1
+    container.Size = UDim2.new(1, 0, 0, 48)
+    container.AutomaticSize = Enum.AutomaticSize.Y
+    container.Parent = parent
+
+    local layout = Instance.new("UIListLayout")
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Padding = UDim.new(0, 6)
+    layout.Parent = container
+
+    local row = createRow(container, 48)
+    row.LayoutOrder = 1
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Position = UDim2.fromOffset(14, 0)
+    label.Size = UDim2.new(0.38, -14, 1, 0)
+    label.Font = Enum.Font.GothamMedium
+    label.Text = labelText
+    label.TextColor3 = Theme.Text
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextTruncate = Enum.TextTruncate.AtEnd
+    label.Parent = row
+
+    local button = Instance.new("TextButton")
+    button.AnchorPoint = Vector2.new(1, 0.5)
+    button.Position = UDim2.new(1, -12, 0.5, 0)
+    button.Size = UDim2.new(0.62, -8, 0, 32)
+    button.BackgroundColor3 = Theme.Input
+    button.BorderSizePixel = 0
+    button.Font = Enum.Font.Gotham
+    button.Text = tostring(currentValue or "No items found")
+    button.TextColor3 = Theme.Text
+    button.TextSize = 12
+    button.TextXAlignment = Enum.TextXAlignment.Left
+    button.TextTruncate = Enum.TextTruncate.AtEnd
+    button.Parent = row
+    makeCorner(button, 6)
+    makePadding(button, 8)
+
+    local list = Instance.new("ScrollingFrame")
+    list.BackgroundColor3 = Theme.Input
+    list.BorderSizePixel = 0
+    list.Size = UDim2.new(1, 0, 0, optionListHeight(#currentOptions))
+    list.ClipsDescendants = true
+    list.Visible = false
+    list.LayoutOrder = 2
+    list.ScrollBarThickness = 4
+    list.ScrollBarImageColor3 = Theme.Accent
+    list.CanvasSize = UDim2.fromOffset(0, 0)
+    list.Parent = container
+    makeCorner(list, 8)
+    makeStroke(list, Theme.Stroke, 1)
+    makePadding(list, 4)
+
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    listLayout.Padding = UDim.new(0, 4)
+    listLayout.Parent = list
+
+    listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        list.CanvasSize = UDim2.fromOffset(0, listLayout.AbsoluteContentSize.Y + 8)
+    end)
+
+    local function clearDropdownItems()
+        for _, child in ipairs(list:GetChildren()) do
+            if child:IsA("TextButton") then
+                child:Destroy()
+            end
+        end
+    end
+
+    local function rebuildDropdown()
+        clearDropdownItems()
+        list.Size = UDim2.new(1, 0, 0, optionListHeight(#currentOptions))
+
+        if #currentOptions == 0 then
+            local empty = Instance.new("TextButton")
+            empty.LayoutOrder = 1
+            empty.BackgroundColor3 = Theme.PanelAlt
+            empty.BorderSizePixel = 0
+            empty.Size = UDim2.new(1, 0, 0, 30)
+            empty.AutoButtonColor = false
+            empty.Font = Enum.Font.Gotham
+            empty.Text = "No items found"
+            empty.TextColor3 = Theme.Muted
+            empty.TextSize = 12
+            empty.TextXAlignment = Enum.TextXAlignment.Left
+            empty.Parent = list
+            makeCorner(empty, 4)
+            makePadding(empty, 8)
+            return
+        end
+
+        for index, option in ipairs(currentOptions) do
+            local item = Instance.new("TextButton")
+            item.LayoutOrder = index
+            item.BackgroundColor3 = Theme.PanelAlt
+            item.BorderSizePixel = 0
+            item.Size = UDim2.new(1, 0, 0, 30)
+            item.Font = Enum.Font.Gotham
+            item.Text = option
+            item.TextColor3 = Theme.Text
+            item.TextSize = 12
+            item.TextXAlignment = Enum.TextXAlignment.Left
+            item.TextTruncate = Enum.TextTruncate.AtEnd
+            item.Parent = list
+            makeCorner(item, 4)
+            makePadding(item, 8)
+
+            item.MouseButton1Click:Connect(function()
+                currentValue = option
+                button.Text = option
+                list.Visible = false
+                if callback then
+                    callback(option)
+                end
+            end)
+        end
+    end
+
+    rebuildDropdown()
+
+    button.MouseButton1Click:Connect(function()
+        list.Visible = not list.Visible
+    end)
+
+    return function(value, newOptions, fireCallback)
+        if newOptions then
+            currentOptions = newOptions
+            rebuildDropdown()
+        end
+
+        if value == nil or value == "" then
+            value = currentOptions[1]
+        end
+
+        if value ~= nil and value ~= "" and not hasOption(currentOptions, value) and #currentOptions > 0 then
+            value = currentOptions[1]
+        end
+
+        currentValue = value
+        button.Text = tostring(currentValue or "No items found")
+
+        if fireCallback ~= false and callback and currentValue then
+            callback(value)
+        end
+    end
+end
+
+local function createMultiSelect(parent, labelText, options, selected, callback)
+    local currentOptions = options or {}
+    selected = selected or copyArrayToSelected(currentOptions)
+    syncSelectedOptions(selected, currentOptions)
+
+    local container = Instance.new("Frame")
+    container.BackgroundTransparency = 1
+    container.Size = UDim2.new(1, 0, 0, 48)
+    container.AutomaticSize = Enum.AutomaticSize.Y
+    container.Parent = parent
+
+    local layout = Instance.new("UIListLayout")
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Padding = UDim.new(0, 6)
+    layout.Parent = container
+
+    local row = createRow(container, 48)
+    row.LayoutOrder = 1
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Position = UDim2.fromOffset(14, 0)
+    label.Size = UDim2.new(0.35, -12, 1, 0)
+    label.Font = Enum.Font.GothamMedium
+    label.Text = labelText
+    label.TextColor3 = Theme.Text
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextTruncate = Enum.TextTruncate.AtEnd
+    label.Parent = row
+
+    local button = Instance.new("TextButton")
+    button.AnchorPoint = Vector2.new(1, 0.5)
+    button.Position = UDim2.new(1, -12, 0.5, 0)
+    button.Size = UDim2.new(0.65, -8, 0, 32)
+    button.BackgroundColor3 = Theme.Input
+    button.BorderSizePixel = 0
+    button.Font = Enum.Font.Gotham
+    button.Text = selectedListToText(selected)
+    button.TextColor3 = Theme.Text
+    button.TextSize = 12
+    button.TextXAlignment = Enum.TextXAlignment.Left
+    button.TextTruncate = Enum.TextTruncate.AtEnd
+    button.Parent = row
+    makeCorner(button, 6)
+    makePadding(button, 8)
+
+    local list = Instance.new("ScrollingFrame")
+    list.BackgroundColor3 = Theme.Input
+    list.BorderSizePixel = 0
+    list.Size = UDim2.new(1, 0, 0, optionListHeight(#currentOptions))
+    list.ClipsDescendants = true
+    list.Visible = false
+    list.LayoutOrder = 2
+    list.ScrollBarThickness = 4
+    list.ScrollBarImageColor3 = Theme.Accent
+    list.CanvasSize = UDim2.fromOffset(0, 0)
+    list.Parent = container
+    makeCorner(list, 8)
+    makeStroke(list, Theme.Stroke, 1)
+    makePadding(list, 4)
+
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    listLayout.Padding = UDim.new(0, 4)
+    listLayout.Parent = list
+
+    listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        list.CanvasSize = UDim2.fromOffset(0, listLayout.AbsoluteContentSize.Y + 8)
+    end)
+
+    local itemButtons = {}
+
+    local function clearMultiSelectItems()
+        for _, child in ipairs(list:GetChildren()) do
+            if child:IsA("TextButton") then
+                child:Destroy()
+            end
+        end
+    end
+
+    local function refresh()
+        syncSelectedOptions(selected, currentOptions)
+        button.Text = selectedListToText(selected)
+        for option, item in pairs(itemButtons) do
+            local active = selected[option] == true
+            item.Text = (active and "[x] " or "[ ] ") .. option
+            item.BackgroundColor3 = active and Theme.AccentSoft or Theme.PanelAlt
+            item.TextColor3 = active and Theme.Text or Theme.Muted
+        end
+    end
+
+    local function rebuildMultiSelect()
+        clearMultiSelectItems()
+        itemButtons = {}
+        list.Size = UDim2.new(1, 0, 0, optionListHeight(#currentOptions))
+
+        if #currentOptions == 0 then
+            local empty = Instance.new("TextButton")
+            empty.LayoutOrder = 1
+            empty.BackgroundColor3 = Theme.PanelAlt
+            empty.BorderSizePixel = 0
+            empty.Size = UDim2.new(1, 0, 0, 30)
+            empty.AutoButtonColor = false
+            empty.Font = Enum.Font.Gotham
+            empty.Text = "No items found"
+            empty.TextColor3 = Theme.Muted
+            empty.TextSize = 12
+            empty.TextXAlignment = Enum.TextXAlignment.Left
+            empty.Parent = list
+            makeCorner(empty, 4)
+            makePadding(empty, 8)
+            return
+        end
+
+        for index, option in ipairs(currentOptions) do
+            local item = Instance.new("TextButton")
+            item.LayoutOrder = index
+            item.BackgroundColor3 = Theme.PanelAlt
+            item.BorderSizePixel = 0
+            item.Size = UDim2.new(1, 0, 0, 30)
+            item.Font = Enum.Font.Gotham
+            item.Text = option
+            item.TextColor3 = Theme.Text
+            item.TextSize = 12
+            item.TextXAlignment = Enum.TextXAlignment.Left
+            item.TextTruncate = Enum.TextTruncate.AtEnd
+            item.Parent = list
+            makeCorner(item, 4)
+            makePadding(item, 8)
+            itemButtons[option] = item
+
+            item.MouseButton1Click:Connect(function()
+                selected[option] = not selected[option]
+                local petEntry = Inventory.PetsByName[option]
+                if petEntry then
+                    if selected[option] then
+                        for _, uuid in ipairs(petEntry.UUIDs or {}) do
+                            selectedTableRememberUuid(selected, uuid)
+                        end
+                    elseif selected.__uuidKeys then
+                        for _, uuid in ipairs(petEntry.UUIDs or {}) do
+                            selected.__uuidKeys[uuidCacheKey(uuid)] = nil
+                        end
+                    end
+                end
+                refresh()
+                if callback then
+                    callback(selected)
+                end
+            end)
+        end
+    end
+
+    button.MouseButton1Click:Connect(function()
+        list.Visible = not list.Visible
+    end)
+
+    rebuildMultiSelect()
+    refresh()
+
+    return function(newSelected, newOptions)
+        if newOptions then
+            currentOptions = newOptions
+        end
+
+        if newSelected then
+            selected = newSelected
+        end
+
+        rebuildMultiSelect()
+        refresh()
+    end
+end
+
+local function parsePriority(text)
+    local priority = {}
+    for raw in string.gmatch(text or "", "([^,]+)") do
+        local value = raw:gsub("^%s+", ""):gsub("%s+$", "")
+        if value ~= "" then
+            priority[#priority + 1] = value
+        end
+    end
+    return priority
+end
+
+local function selectedToPriority(selected)
+    local priority = {}
+    for _, name in ipairs(selected.__order or {}) do
+        if selected[name] then
+            priority[#priority + 1] = name
+        end
+    end
+    return priority
+end
+
+local function selectedEggRuleOptions()
+    local selectedEggs = selectedToPriority(Config.Hatch.SelectedEggs)
+    if #selectedEggs > 0 then
+        return selectedEggs
+    end
+
+    return OPTIONS.Eggs
+end
+
+local function eggPetOptions(eggName)
+    if not eggName or eggName == "" then
+        return {}
+    end
+
+    return OPTIONS.EggPetsByEgg[eggName] or {}
+end
+
+local function normalizeEggPriorityToSelected()
+    local selectedEggs = selectedEggRuleOptions()
+    local filteredPriority = {}
+
+    for _, eggName in ipairs(Config.Hatch.EggPriority) do
+        if hasOption(selectedEggs, eggName) then
+            filteredPriority[#filteredPriority + 1] = eggName
+        end
+    end
+
+    Config.Hatch.EggPriority = filteredPriority
+    if #Config.Hatch.EggPriority == 0 and selectedEggs[1] then
+        Config.Hatch.EggPriority = {selectedEggs[1]}
+    end
+
+    return selectedEggs
+end
+
+local function refreshInventorySummary()
+    if not inventorySummaryLabel then
+        return
+    end
+
+    inventorySummaryLabel.Text = ("Inventory data: %d pets | %d eggs | %d seeds | %d fruits"):format(
+        #OPTIONS.Pets,
+        #OPTIONS.Eggs,
+        #OPTIONS.Seeds,
+        #OPTIONS.Fruits
+    )
+end
+
+local function refreshInventoryOptions(reason)
+    local selectedPetUuidKeys = {
+        LevelPets = captureSelectedPetUuidKeys(Config.Main.LevelPets),
+        FeedPets = captureSelectedPetUuidKeys(Config.Main.FeedPets),
+        KgBoosterPets = captureSelectedPetUuidKeys(Config.Main.KgBoosterPets),
+        KgTargetPets = captureSelectedPetUuidKeys(Config.Main.KgTargetPets),
+        PickAndPlacePets = captureSelectedPetUuidKeys(Config.Main.PickAndPlacePets),
+        MutationPets = captureSelectedPetUuidKeys(Config.Mutation.PetsToUse),
+        MutationCooldownPets = captureSelectedPetUuidKeys(Config.Mutation.MutationCooldownPets),
+        PetMutationGivers = captureSelectedPetUuidKeys(Config.Mutation.PetMutationGivers),
+        FavoritePets = captureSelectedPetUuidKeys(Config.Misc.FavoritePets),
+        EggReductionPets = captureSelectedPetUuidKeys(Config.Hatch.EggReductionPets),
+        HatchSupportPets = captureSelectedPetUuidKeys(Config.Hatch.HatchSupportPets),
+        SealPets = captureSelectedPetUuidKeys(Config.Hatch.SealPets),
+    }
+
+    scanInventory()
+
+    syncSelectedPetOptions(Config.Main.LevelPets, OPTIONS.Pets, selectedPetUuidKeys.LevelPets)
+    syncSelectedPetOptions(Config.Main.FeedPets, OPTIONS.Pets, selectedPetUuidKeys.FeedPets)
+    syncSelectedPetOptions(Config.Main.KgBoosterPets, OPTIONS.Pets, selectedPetUuidKeys.KgBoosterPets)
+    syncSelectedPetOptions(Config.Main.KgTargetPets, OPTIONS.Pets, selectedPetUuidKeys.KgTargetPets)
+    syncSelectedPetOptions(Config.Main.PickAndPlacePets, OPTIONS.Pets, selectedPetUuidKeys.PickAndPlacePets)
+    syncSelectedOptions(Config.Hatch.SelectedEggs, OPTIONS.Eggs)
+    syncSelectedOptions(Config.Mutation.SelectedMutations, OPTIONS.Mutations)
+    syncSelectedPetOptions(Config.Mutation.PetsToUse, OPTIONS.Pets, selectedPetUuidKeys.MutationPets)
+    syncSelectedPetOptions(Config.Mutation.MutationCooldownPets, OPTIONS.Pets, selectedPetUuidKeys.MutationCooldownPets)
+    syncSelectedPetOptions(Config.Mutation.PetMutationGivers, OPTIONS.Pets, selectedPetUuidKeys.PetMutationGivers)
+    syncSelectedPetOptions(Config.Misc.FavoritePets, OPTIONS.Pets, selectedPetUuidKeys.FavoritePets)
+    syncSelectedPetOptions(Config.Hatch.EggReductionPets, OPTIONS.Pets, selectedPetUuidKeys.EggReductionPets)
+    syncSelectedPetOptions(Config.Hatch.HatchSupportPets, OPTIONS.Pets, selectedPetUuidKeys.HatchSupportPets)
+    syncSelectedPetOptions(Config.Hatch.SealPets, OPTIONS.Pets, selectedPetUuidKeys.SealPets)
+    syncSelectedOptions(Config.Misc.FruitsToCollect, OPTIONS.FruitsToCollect)
+    syncSelectedOptions(Config.Misc.FruitsToSell, OPTIONS.FruitsToSell)
+    syncSelectedOptions(Config.Misc.SeedsToPlace, OPTIONS.SeedsToPlace)
+
+    local sellEggRuleOptions = normalizeEggPriorityToSelected()
+
+    if Runtime.SelectedSellRuleEgg == "" or not hasOption(sellEggRuleOptions, Runtime.SelectedSellRuleEgg) then
+        Runtime.SelectedSellRuleEgg = sellEggRuleOptions[1] or ""
+    end
+
+    for _, eggName in ipairs(sellEggRuleOptions) do
+        local petOptions = eggPetOptions(eggName)
+        Config.Hatch.SellRulesByEgg[eggName] = Config.Hatch.SellRulesByEgg[eggName] or copyArrayToSelected(petOptions)
+        syncSelectedOptions(Config.Hatch.SellRulesByEgg[eggName], petOptions)
+    end
+
+    for eggName in pairs(Config.Hatch.SellRulesByEgg) do
+        if not hasOption(sellEggRuleOptions, eggName) then
+            Config.Hatch.SellRulesByEgg[eggName] = nil
+        end
+    end
+
+    if UIRefresh.EggsToHatch then
+        UIRefresh.EggsToHatch(Config.Hatch.SelectedEggs, OPTIONS.Eggs)
+    end
+
+    if UIRefresh.EggPriority then
+        UIRefresh.EggPriority(Config.Hatch.EggPriority[1], sellEggRuleOptions, false)
+    end
+
+    if UIRefresh.EggRule then
+        UIRefresh.EggRule(Runtime.SelectedSellRuleEgg, sellEggRuleOptions, false)
+    end
+
+    if UIRefresh.SellPets then
+        local sellPetOptions = eggPetOptions(Runtime.SelectedSellRuleEgg)
+        local currentSellRule = Runtime.SelectedSellRuleEgg ~= ""
+            and (Config.Hatch.SellRulesByEgg[Runtime.SelectedSellRuleEgg] or copyArrayToSelected(sellPetOptions))
+            or copyArrayToSelected({})
+        UIRefresh.SellPets(currentSellRule, sellPetOptions)
+    end
+
+    if UIRefresh.SellRuleSummary then
+        UIRefresh.SellRuleSummary.Text = "Keep rule: " .. (Runtime.SelectedSellRuleEgg ~= "" and Runtime.SelectedSellRuleEgg or "No eggs found")
+    end
+
+    if UIRefresh.FavoritePets then
+        UIRefresh.FavoritePets(Config.Misc.FavoritePets, OPTIONS.Pets)
+    end
+
+    if UIRefresh.EggReductionPets then
+        UIRefresh.EggReductionPets(Config.Hatch.EggReductionPets, OPTIONS.Pets)
+    end
+
+    if UIRefresh.HatchSupportPets then
+        UIRefresh.HatchSupportPets(Config.Hatch.HatchSupportPets, OPTIONS.Pets)
+    end
+
+    if UIRefresh.SealPets then
+        UIRefresh.SealPets(Config.Hatch.SealPets, OPTIONS.Pets)
+    end
+
+    if UIRefresh.LevelPets then
+        UIRefresh.LevelPets(Config.Main.LevelPets, OPTIONS.Pets)
+    end
+
+    if UIRefresh.MainLevelPets then
+        UIRefresh.MainLevelPets(Config.Main.LevelPets, OPTIONS.Pets)
+    end
+
+    if UIRefresh.FeedPets then
+        UIRefresh.FeedPets(Config.Main.FeedPets, OPTIONS.Pets)
+    end
+
+    if UIRefresh.KgBoosterPets then
+        UIRefresh.KgBoosterPets(Config.Main.KgBoosterPets, OPTIONS.Pets)
+    end
+
+    if UIRefresh.KgTargetPets then
+        UIRefresh.KgTargetPets(Config.Main.KgTargetPets, OPTIONS.Pets)
+    end
+
+    if UIRefresh.PickAndPlacePets then
+        UIRefresh.PickAndPlacePets(Config.Main.PickAndPlacePets, OPTIONS.Pets)
+    end
+
+    if UIRefresh.Mutations then
+        UIRefresh.Mutations(Config.Mutation.SelectedMutations, OPTIONS.Mutations)
+    end
+
+    if UIRefresh.MutationPets then
+        UIRefresh.MutationPets(Config.Mutation.PetsToUse, OPTIONS.Pets)
+    end
+
+    if UIRefresh.MutationCooldownPets then
+        UIRefresh.MutationCooldownPets(Config.Mutation.MutationCooldownPets, OPTIONS.Pets)
+    end
+
+    if UIRefresh.PetMutationGivers then
+        UIRefresh.PetMutationGivers(Config.Mutation.PetMutationGivers, OPTIONS.Pets)
+    end
+
+    if UIRefresh.FruitsToCollect then
+        UIRefresh.FruitsToCollect(Config.Misc.FruitsToCollect, OPTIONS.FruitsToCollect)
+    end
+
+    if UIRefresh.FruitsToSell then
+        UIRefresh.FruitsToSell(Config.Misc.FruitsToSell, OPTIONS.FruitsToSell)
+    end
+
+    if UIRefresh.SeedsToPlace then
+        UIRefresh.SeedsToPlace(Config.Misc.SeedsToPlace, OPTIONS.SeedsToPlace)
+    end
+
+    refreshInventorySummary()
+
+    if reason then
+        log(("Inventory refreshed: %d pets, %d eggs, %d seeds, %d fruits."):format(
+            #OPTIONS.Pets,
+            #OPTIONS.Eggs,
+            #OPTIONS.Seeds,
+            #OPTIONS.Fruits
+        ))
+    end
+end
+
+function Actions.AutoLevelPet(enabled)
+    log("Auto Lvl Pet " .. (enabled and "enabled" or "disabled") .. " | target " .. tostring(Config.Main.LevelTarget))
+end
+
+function Actions.AutoFeedPet(enabled)
+    log("Auto Feed Pet " .. (enabled and "enabled" or "disabled") .. " | hunger < " .. tostring(Config.Main.HungerThreshold) .. "%")
+end
+
+local function feedPetEntry(entry)
+    local uuid = firstUuid(entry)
+    local instance = firstInstance(entry)
+
+    if not uuid and not instance then
+        return false
+    end
+
+    local argSets = {}
+    if uuid then
+        argSets[#argSets + 1] = {"Feed", uuid}
+        argSets[#argSets + 1] = {uuid}
+        argSets[#argSets + 1] = {"FeedPet", uuid}
+    end
+
+    if instance then
+        argSets[#argSets + 1] = {"Feed", instance}
+        argSets[#argSets + 1] = {instance}
+    end
+
+    cachePetEntryName(entry)
+    return tryFireGameEventAny("ActivePetService", argSets)
+end
+
+function Actions.FeedHungryPetsOnce()
+    local threshold = tonumber(Config.Main.HungerThreshold) or 50
+    local fedCount = 0
+
+    for _, entry in ipairs(selectedPetEntries(Config.Main.FeedPets)) do
+        local uuid = firstUuid(entry)
+        if uuid or firstInstance(entry) then
+            local hunger = getPetHungerPercent(entry)
+            if hunger == nil or hunger < threshold then
+                local fired = feedPetEntry(entry)
+                if fired then
+                    fedCount = fedCount + 1
+                    if hunger then
+                        log(("Fed %s | hunger %.1f%% < %.1f%%"):format(tostring(entry.Name), hunger, threshold))
+                    else
+                        log("Fed " .. tostring(entry.Name) .. " | hunger value not exposed")
+                    end
+                else
+                    log("Feed remote did not fire for " .. tostring(entry.Name))
+                end
+            end
+        else
+            log("Feed skipped: selected pet has no UUID/tool: " .. tostring(entry.Name))
+        end
+    end
+
+    if fedCount == 0 then
+        log("Feed check complete: no selected pets needed food or feed remote did not fire.")
+    end
+
+    return fedCount
+end
+
+local function getPetLevel(entry)
+    for _, instance in ipairs(entry and entry.Instances or {}) do
+        local text = tostring(instance.Name)
+        local levelText = text:match("%[[Aa]ge%s+(%d+)%]")
+            or text:match("%[[Ll]evel%s+(%d+)%]")
+            or text:match("[Aa]ge%s+(%d+)")
+            or text:match("[Ll]evel%s+(%d+)")
+
+        if levelText then
+            return tonumber(levelText)
+        end
+
+        local levelValue = readNumericField(instance, {"Age", "Level", "PetLevel"}, {"Max", "Target"})
+        if levelValue then
+            return levelValue
+        end
+    end
+
+    return nil
+end
+
+function Actions.LevelSelectedPetsOnce()
+    local targetLevel = clampNumber(math.floor(tonumber(Config.Main.LevelTarget) or 100), 1, 100)
+    local firedCount = 0
+
+    for _, entry in ipairs(selectedPetEntries(Config.Main.LevelPets)) do
+        local uuid = firstUuid(entry)
+        local level = getPetLevel(entry)
+
+        if uuid and (not level or level < targetLevel) then
+            cachePetEntryName(entry)
+            local fired = tryFireGameEvent("PetBoostService", "Level", uuid)
+                or tryFireGameEvent("PetBoostService", "XP", uuid)
+                or tryFireGameEvent("ActivePetService", "Feed", uuid)
+
+            if fired then
+                firedCount = firedCount + 1
+            end
+        end
+    end
+
+    if firedCount > 0 then
+        log(("Auto Level fired for %d selected pet(s)."):format(firedCount))
+    else
+        log("Auto Level check complete: no selected pets needed a level pulse.")
+    end
+
+    return firedCount
+end
+
+local function getPetKg(entry)
+    for _, instance in ipairs(entry and entry.Instances or {}) do
+        local kgText = tostring(instance.Name):match("%[(%d+%.?%d*)%s*[Kk][Gg]%]")
+            or tostring(instance.Name):match("(%d+%.?%d*)%s*[Kk][Gg]")
+        if kgText then
+            return tonumber(kgText)
+        end
+
+        local kgValue = readNumericField(instance, {"KG", "Weight", "Mass"}, {"Max", "Target", "Goal"})
+        if kgValue then
+            return kgValue
+        end
+    end
+
+    return nil
+end
+
+local function entryUuidKey(entry)
+    local uuid = firstUuid(entry)
+    return uuid and uuidCacheKey(uuid) or nil
+end
+
+local function findPetEntryByUuidKey(key)
+    if not key then
+        return nil
+    end
+
+    for uuid, entry in pairs(Inventory.ItemsByUuid) do
+        if uuidCacheKey(uuid) == key then
+            return entry
+        end
+    end
+
+    return nil
+end
+
+local function captureInventoryPetUuidKeys()
+    local keys = {}
+
+    for _, entry in ipairs(Inventory.Pets or {}) do
+        for _, uuid in ipairs(entry.UUIDs or {}) do
+            keys[uuidCacheKey(uuid)] = true
+        end
+    end
+
+    return keys
+end
+
+local function findNewPetEntries(previousUuidKeys)
+    local entries = {}
+    local seen = {}
+
+    for _, entry in ipairs(Inventory.Pets or {}) do
+        for _, uuid in ipairs(entry.UUIDs or {}) do
+            local key = uuidCacheKey(uuid)
+            if not previousUuidKeys[key] and not seen[key] then
+                seen[key] = true
+                entries[#entries + 1] = entry
+                break
+            end
+        end
+    end
+
+    return entries
+end
+
+local function isKgBoostTargetDone(entry)
+    local key = entryUuidKey(entry)
+    if key and Runtime.KgBoostCompleted[key] then
+        return true
+    end
+
+    local kg = getPetKg(entry)
+    local trackedKg = key and Runtime.KgLastLoggedByUuid[key] or nil
+    if (kg and kg >= KG_BOOST_TARGET_KG) or (trackedKg and trackedKg >= KG_BOOST_TARGET_KG) then
+        return true
+    end
+
+    return false
+end
+
+local function equipPetEntry(entry, slotIndex)
+    local uuid = firstUuid(entry)
+    if not uuid then
+        return false
+    end
+
+    cachePetEntryName(entry)
+    return fireGameEvent("PetsService", "EquipPet", uuid, getPlacementCFrame(slotIndex))
+end
+
+local function unequipPetEntry(entry)
+    local uuid = firstUuid(entry)
+    if not uuid then
+        return false
+    end
+
+    cachePetEntryName(entry)
+    return fireGameEvent("PetsService", "UnequipPet", uuid)
+end
+
+local function firePetKgBoost(entry)
+    local uuid = firstUuid(entry)
+    if not uuid then
+        return false
+    end
+
+    cachePetEntryName(entry)
+    return tryFireGameEvent("PetBoostService", "Boost", uuid)
+        or tryFireGameEvent("PetBoostService", uuid)
+        or tryFireGameEvent("PetBoostService", "KGBoost", uuid)
+end
+
+local function roundKg(value)
+    value = tonumber(value)
+    if not value then
+        return nil
+    end
+
+    return math.floor((value * 10) + 0.5) / 10
+end
+
+local function getTrackedPetKg(entry)
+    local key = entryUuidKey(entry)
+    local kg = getPetKg(entry)
+    local trackedKg = key and Runtime.KgLastLoggedByUuid[key] or nil
+
+    if kg and trackedKg then
+        return math.max(kg, trackedKg)
+    elseif kg then
+        return kg
+    end
+
+    return trackedKg
+end
+
+local function recordKgBoostProgress(entry, beforeKg, afterKg)
+    local key = entryUuidKey(entry)
+    if not key then
+        return false
+    end
+
+    local oldKg = roundKg(beforeKg or Runtime.KgLastLoggedByUuid[key] or getPetKg(entry) or 0)
+    local newKg = roundKg(afterKg or (oldKg + KG_BOOST_STEP_KG))
+    newKg = math.min(KG_BOOST_TARGET_KG, newKg)
+
+    local lastLogged = Runtime.KgLastLoggedByUuid[key]
+    if not lastLogged or newKg >= lastLogged + 0.099 or newKg >= KG_BOOST_TARGET_KG then
+        Runtime.KgLastLoggedByUuid[key] = newKg
+        log(("%s KG boosted: %.1f -> %.1f KG"):format(tostring(entry.Name), oldKg, newKg))
+        sendKgWebhook(entry, oldKg, newKg)
+    end
+
+    return newKg >= KG_BOOST_TARGET_KG
+end
+
+local function getKgBoostTargets(limit, blockedUuidKeys)
+    local entries = selectedPetEntries(Config.Main.KgTargetPets)
+    local targets = {}
+    if #entries == 0 then
+        return targets
+    end
+
+    local startIndex = tonumber(Runtime.KgBoostIndex) or 1
+    for offset = 0, #entries - 1 do
+        if #targets >= limit then
+            break
+        end
+
+        local index = ((startIndex + offset - 1) % #entries) + 1
+        local entry = entries[index]
+        local key = entryUuidKey(entry)
+        Runtime.KgBoostIndex = (index % #entries) + 1
+
+        if key and not blockedUuidKeys[key] and not isKgBoostTargetDone(entry) then
+            blockedUuidKeys[key] = true
+            targets[#targets + 1] = entry
+        end
+    end
+
+    return targets
+end
+
+function Actions.KgBoostBatchOnce()
+    local boosterEntries = selectedPetEntries(Config.Main.KgBoosterPets)
+    local blockedUuidKeys = {}
+    local equippedBoosters = 0
+    local boosterLimit = math.max(0, MAX_PETS_EQUIPPED - 1)
+
+    for _, entry in ipairs(boosterEntries) do
+        if equippedBoosters >= boosterLimit then
+            break
+        end
+
+        local key = entryUuidKey(entry)
+        if key and not blockedUuidKeys[key] then
+            blockedUuidKeys[key] = true
+            equippedBoosters = equippedBoosters + 1
+            equipPetEntry(entry, equippedBoosters)
+        end
+    end
+
+    if equippedBoosters == 0 then
+        log("KG Boost skipped: no booster team pets selected.")
+        return false
+    end
+
+    local targetLimit = math.max(1, MAX_PETS_EQUIPPED - equippedBoosters)
+    local targets = getKgBoostTargets(targetLimit, blockedUuidKeys)
+    if #targets == 0 then
+        log("KG Boost complete: no selected target pets left.")
+        return false
+    end
+
+    for index, entry in ipairs(targets) do
+        equipPetEntry(entry, equippedBoosters + index)
+    end
+
+    local boostedCount = 0
+    local completedCount = 0
+
+    for _, entry in ipairs(targets) do
+        local key = entryUuidKey(entry)
+        local beforeKg = getTrackedPetKg(entry)
+        local fired = firePetKgBoost(entry)
+        if fired then
+            boostedCount = boostedCount + 1
+        end
+
+        task.wait(0.15)
+        scanInventory()
+
+        local latestEntry = findPetEntryByUuidKey(key) or entry
+        local afterKg = getPetKg(latestEntry)
+        if fired and beforeKg and (not afterKg or afterKg <= beforeKg + 0.001) then
+            afterKg = beforeKg + KG_BOOST_STEP_KG
+        end
+        local reachedTarget = false
+        if fired or (afterKg and beforeKg and afterKg > beforeKg) then
+            reachedTarget = recordKgBoostProgress(latestEntry, beforeKg, afterKg)
+        else
+            log("KG boost remote did not fire for " .. tostring(latestEntry.Name))
+        end
+
+        if key and reachedTarget then
+            Runtime.KgBoostCompleted[key] = true
+            completedCount = completedCount + 1
+            unequipPetEntry(latestEntry)
+            log(("%s reached %.1f KG and was removed from KG queue."):format(tostring(latestEntry.Name), KG_BOOST_TARGET_KG))
+        end
+    end
+
+    log(("KG Boost cycle: %d booster(s), %d target(s), %d boost call(s), %d completed."):format(
+        equippedBoosters,
+        #targets,
+        boostedCount,
+        completedCount
+    ))
+    return true
+end
+
+function Actions.CollectSelectedFruitOnce()
+    local targets = {}
+    local seen = {}
+
+    for _, entry in ipairs(selectedFruitCollectEntries(Config.Misc.FruitsToCollect)) do
+        for _, target in ipairs(getFruitCollectTargets(entry)) do
+            addUniqueInstance(targets, seen, target)
+        end
+    end
+
+    if #targets == 0 then
+        log("Fruit pickup skipped: no selected farm fruit found.")
+        return 0
+    end
+
+    local firedCount = 0
+    for _, target in ipairs(targets) do
+        local firedHarvest = tryFireGameEventAny("HarvestRemote", {
+            {target},
+            {{target}},
+            {target.Parent},
+            {target.Name},
+            {target, localPlayer},
+        })
+        local firedCollect = tryFireGameEvent("CollectFruit", {target})
+
+        if firedHarvest or firedCollect then
+            firedCount = firedCount + 1
+        end
+    end
+
+    log(("Fruit pickup fired for %d target(s)."):format(firedCount))
+    return firedCount
+end
+
+function Actions.SellSelectedFruitOnce()
+    local soldCount = 0
+
+    for _, entry in ipairs(selectedFruitEntries(Config.Misc.FruitsToSell)) do
+        local tool = firstToolInstance(entry)
+        if tool and equipToolInstance(tool) then
+            task.wait(0.1)
+            if tryFireGameEvent("SellItem") then
+                soldCount = soldCount + 1
+            end
+        end
+    end
+
+    if soldCount == 0 then
+        if tryFireGameEvent("SellItem") then
+            log("Sell_Item fired without a selected fruit tool.")
+        else
+            log("Auto Sell Fruit skipped: Sell_Item remote not found.")
+        end
+    else
+        log(("Auto Sell Fruit sold %d selected fruit stack(s)."):format(soldCount))
+    end
+
+    return soldCount
+end
+
+function Actions.FavoriteSelectedPetsOnce()
+    local desired = Config.Misc.FavoriteMode == "Favorite"
+    local changedCount = 0
+
+    for _, entry in ipairs(selectedPetEntries(Config.Misc.FavoritePets)) do
+        local uuid = firstUuid(entry)
+        local instance = firstInstance(entry)
+        local current = readBooleanField(instance, {"Favorite", "Favorited", "IsFavorite", "Locked"})
+        local uuidKey = uuid and uuidCacheKey(uuid) or tostring(entry.Name)
+        local appliedKey = uuidKey .. ":" .. tostring(desired)
+
+        if current ~= desired and (current ~= nil or not Runtime.FavoriteAppliedByUuid[appliedKey]) then
+            cachePetEntryName(entry)
+            local payload = instance or uuid
+            if payload and tryFireGameEvent("FavoriteItem", payload, desired) then
+                changedCount = changedCount + 1
+                Runtime.FavoriteAppliedByUuid[appliedKey] = true
+                log((desired and "Favorited " or "Unfavorited ") .. tostring(entry.Name))
+            elseif uuid and tryFireGameEvent("FavoriteItem", uuid, desired) then
+                changedCount = changedCount + 1
+                Runtime.FavoriteAppliedByUuid[appliedKey] = true
+                log((desired and "Favorited " or "Unfavorited ") .. tostring(entry.Name))
+            end
+        end
+    end
+
+    if changedCount == 0 then
+        log("Favorite check complete: no selected pet needed a change or remote did not fire.")
+    end
+
+    return changedCount
+end
+
+local function getSelectedNames(selected)
+    local names = {}
+    for _, name in ipairs(selected and selected.__order or {}) do
+        if isSelectedName(selected, name) then
+            names[#names + 1] = name
+        end
+    end
+    return names
+end
+
+local DEFAULT_GEAR_BUY_NAMES = {
+    "Watering Can",
+    "Trowel",
+    "Recall Wrench",
+    "Basic Sprinkler",
+    "Advanced Sprinkler",
+    "Godly Sprinkler",
+    "Master Sprinkler",
+    "Lightning Rod",
+    "Favorite Tool",
+    "Harvest Tool",
+}
+
+local DEFAULT_EVENT_BUY_NAMES = {
+    "Honey Sprinkler",
+    "Bee Egg",
+    "Flower Seed Pack",
+    "Nectarine",
+    "Hive Fruit",
+}
+
+local DEFAULT_EGG_BUY_NAMES = {
+    "Common Egg",
+    "Uncommon Egg",
+    "Rare Egg",
+    "Legendary Egg",
+    "Mythical Egg",
+    "Bug Egg",
+    "Bee Egg",
+    "Night Egg",
+    "Paradise Egg",
+    "Oasis Egg",
+    "Anti Bee Egg",
+    "Dinosaur Egg",
+    "Primal Egg",
+    "Zen Egg",
+    "Gourmet Egg",
+}
+
+local DEFAULT_SEED_BUY_NAMES = {
+    "Carrot",
+    "Strawberry",
+    "Blueberry",
+    "Tomato",
+    "Corn",
+    "Daffodil",
+    "Watermelon",
+    "Pumpkin",
+    "Apple",
+    "Bamboo",
+    "Coconut",
+    "Cactus",
+    "Dragon Fruit",
+    "Mango",
+    "Grape",
+    "Mushroom",
+    "Pepper",
+    "Cacao",
+    "Beanstalk",
+}
+
+local function fireBuyVariants(remoteName, itemName, index)
+    local argSets = {}
+
+    if itemName and itemName ~= "" then
+        argSets[#argSets + 1] = {itemName}
+        argSets[#argSets + 1] = {itemName, 1}
+        argSets[#argSets + 1] = {itemName, true}
+        argSets[#argSets + 1] = {"Buy", itemName}
+        argSets[#argSets + 1] = {"Purchase", itemName}
+    end
+
+    if index then
+        argSets[#argSets + 1] = {index}
+        argSets[#argSets + 1] = {index, 1}
+        if itemName and itemName ~= "" then
+            argSets[#argSets + 1] = {index, itemName}
+            argSets[#argSets + 1] = {itemName, index}
+        end
+    end
+
+    if #argSets == 0 then
+        argSets[#argSets + 1] = {}
+    end
+
+    return fireGameEventAll(remoteName, argSets, 0.02)
+end
+
+function Actions.AutoBuySelectedShopsOnce()
+    local firedCount = 0
+    local selectedSeeds = getSelectedNames(Config.Misc.SeedsToPlace)
+    local seedBuyNames = #selectedSeeds > 0 and selectedSeeds or DEFAULT_SEED_BUY_NAMES
+    local selectedEggs = selectedToPriority(Config.Hatch.SelectedEggs)
+    if #selectedEggs == 0 then
+        selectedEggs = #OPTIONS.Eggs > 0 and OPTIONS.Eggs or DEFAULT_EGG_BUY_NAMES
+    end
+    local shopsToBuy = getSelectedNames(Config.Misc.ShopsToBuy)
+    if #shopsToBuy == 0 then
+        shopsToBuy = OPTIONS.Shops
+    end
+
+    for _, shopName in ipairs(shopsToBuy) do
+        if shopName == "Seed Shop" then
+            for index, seedName in ipairs(seedBuyNames) do
+                firedCount = firedCount + fireBuyVariants("BuySeedStock", seedName, index)
+                firedCount = firedCount + fireBuyVariants("BuyDailySeedShopStock", seedName, index)
+            end
+        elseif shopName == "Gear Shop" then
+            for index, gearName in ipairs(DEFAULT_GEAR_BUY_NAMES) do
+                firedCount = firedCount + fireBuyVariants("BuyGearStock", gearName, index)
+            end
+        elseif shopName == "Egg Shop" then
+            for index, eggName in ipairs(selectedEggs) do
+                firedCount = firedCount + fireBuyVariants("BuyPetEgg", eggName, index)
+            end
+            for slot = 1, MAX_EGGS_PLACED do
+                firedCount = firedCount + fireBuyVariants("BuyPetEgg", nil, slot)
+            end
+        elseif shopName == "Cosmetic Shop" then
+            firedCount = firedCount + fireBuyVariants("BuyCosmeticItem")
+        elseif shopName == "Event Merchant" or shopName == "Honey Merchant" or shopName == "Traveling Merchant" then
+            for index, itemName in ipairs(DEFAULT_EVENT_BUY_NAMES) do
+                firedCount = firedCount + fireBuyVariants("BuyEventShopStock", itemName, index)
+            end
+            if tryFireGameEvent("BuyEventShopRestock") then firedCount = firedCount + 1 end
+        end
+    end
+
+    log(("Auto Buy fired %d shop request(s)."):format(firedCount))
+    return firedCount
+end
+
+local function plantSeedAt(seedName, cframe)
+    local position = cframe.Position
+    return tryFireGameEventAny("Plant", {
+        {position, seedName},
+        {seedName, position},
+        {cframe, seedName},
+        {seedName, cframe},
+        {seedName},
+    })
+end
+
+function Actions.PlaceSelectedSeedsOnce()
+    local placedCount = 0
+
+    for _, entry in ipairs(selectedSeedEntries(Config.Misc.SeedsToPlace)) do
+        local seedName = entry.Name
+        local tool = firstToolInstance(entry)
+        if tool then
+            equipToolInstance(tool)
+            task.wait(0.03)
+        end
+
+        local cframe = getPlacementCFrame(placedCount + 1)
+        if plantSeedAt(seedName, cframe) then
+            placedCount = placedCount + 1
+            task.wait(0.02)
+        end
+    end
+
+    if placedCount == 0 then
+        log("Auto Place Seeds skipped: no selected seed tools found or Plant_RE did not fire.")
+    else
+        log(("Auto Place Seeds fired Plant_RE for %d seed(s)."):format(placedCount))
+    end
+
+    return placedCount
+end
+
+function Actions.RebirthOnce()
+    if tryFireGameEvent("BuyRebirth") then
+        log("BuyRebirth fired.")
+        return true
+    end
+
+    log("Auto Rebirth skipped: BuyRebirth remote not found.")
+    return false
+end
+
+function Actions.AutoKgBoost(enabled)
+    log("Auto KG Boost " .. (enabled and "enabled" or "disabled") .. " | max equipped " .. tostring(MAX_PETS_EQUIPPED) .. " | target " .. tostring(KG_BOOST_TARGET_KG) .. " KG")
+end
+do
+    local BUFF_KEYWORDS = {
+        "egg",
+        "hatch",
+        "refund",
+        "size",
+        "seal",
+        "sell",
+        "reduce",
+        "reduction",
+        "cooldown",
+        "boost",
+    }
+
+    local function selectedEggPriorityList()
+        local priority = {}
+
+        for _, eggName in ipairs(Config.Hatch.EggPriority or {}) do
+            if hasOption(OPTIONS.Eggs, eggName) and not hasOption(priority, eggName) then
+                priority[#priority + 1] = eggName
+            end
+        end
+
+        for _, eggName in ipairs(Config.Hatch.SelectedEggs.__order or {}) do
+            if Config.Hatch.SelectedEggs[eggName] and not hasOption(priority, eggName) then
+                priority[#priority + 1] = eggName
+            end
+        end
+
+        return priority
+    end
+
+    local function cyclePetTeam(selected, runtimeIndexKey, maxCount, label)
+        local equippedCount = 0
+        local entries = selectedPetEntries(selected)
+        if #entries == 0 then
+            return 0
+        end
+
+        local startIndex = tonumber(Runtime[runtimeIndexKey]) or 1
+        for offset = 0, #entries - 1 do
+            if equippedCount >= maxCount then
+                break
+            end
+
+            local index = ((startIndex + offset - 1) % #entries) + 1
+            local entry = entries[index]
+            Runtime[runtimeIndexKey] = (index % #entries) + 1
+
+            if equipPetEntry(entry, equippedCount + 1) then
+                equippedCount = equippedCount + 1
+            end
+        end
+
+        if equippedCount > 0 then
+            log(("%s equipped %d pet(s)."):format(label, equippedCount))
+        end
+
+        return equippedCount
+    end
+
+    local function sellPetEntry(entry)
+        local uuid = firstUuid(entry)
+        local tool = firstToolInstance(entry)
+        local instance = firstInstance(entry)
+        local payload = tool or instance
+        if not uuid and not payload then
+            return false
+        end
+
+        cachePetEntryName(entry)
+        return tryFireGameEventAny("SellPet", {
+            {payload, true},
+            {payload, Config.Hatch.AutoSellWithSeal},
+            {payload},
+            {uuid},
+            {uuid, Config.Hatch.AutoSellWithSeal},
+            {"Sell", uuid},
+            {"SellPet", uuid},
+        })
+    end
+
+    local function sellUnkeptPets(eggName, petEntries, newlyHatchedOnly)
+        if not Config.Hatch.AutoSellPets then
+            return 0
+        end
+
+        if Config.Hatch.OnlySellNewlyHatched and not newlyHatchedOnly then
+            log("Sell skipped: Only Sell Newly Hatched is enabled.")
+            return 0
+        end
+
+        if Config.Hatch.AutoSellWithSeal then
+            cyclePetTeam(Config.Hatch.SealPets, "SealIndex", MAX_PETS_EQUIPPED, "Seal team")
+            task.wait(0.25)
+        end
+
+        local keepRule = Config.Hatch.SellRulesByEgg[eggName] or {}
+        local soldCount = 0
+        for _, entry in ipairs(petEntries or {}) do
+            if not keepRule[entry.Name] then
+                if not Config.Hatch.DontSellFavorited or not readBooleanField(firstInstance(entry), {"Favorite", "Favorited", "IsFavorite", "Locked"}) then
+                    if sellPetEntry(entry) then
+                        soldCount = soldCount + 1
+                        log("Sold non-keep hatch pet: " .. tostring(entry.Name))
+                    end
+                end
+            end
+        end
+
+        return soldCount
+    end
+
+    local function addBuffLine(lines, seen, sourceName, key, value)
+        local text = tostring(key or "")
+        local lower = text:lower()
+        if not hasAnyKeyword(lower, BUFF_KEYWORDS) then
+            return
+        end
+
+        local line = ("%s | %s = %s"):format(tostring(sourceName), text, tostring(value))
+        if not seen[line] then
+            seen[line] = true
+            lines[#lines + 1] = line
+        end
+    end
+
+    local function collectPetBuffLines(entry)
+        local lines = {}
+        local seen = {}
+
+        for _, instance in ipairs(entry and entry.Instances or {}) do
+            local ok, attributes = pcall(function()
+                return instance:GetAttributes()
+            end)
+            if ok and type(attributes) == "table" then
+                for key, value in pairs(attributes) do
+                    addBuffLine(lines, seen, entry.Name, key, value)
+                end
+            end
+
+            for _, descendant in ipairs(instance:GetDescendants()) do
+                if descendant:IsA("StringValue") or descendant:IsA("NumberValue") or descendant:IsA("IntValue") or descendant:IsA("BoolValue") then
+                    addBuffLine(lines, seen, entry.Name, descendant.Name, descendant.Value)
+                end
+            end
+        end
+
+        return lines
+    end
+
+    local function currentPlacedEggCount()
+        local objects = getFarmPhysicalContainer("Objects_Physical")
+        if not objects then
+            return 0
+        end
+
+        local count = 0
+        for _, object in ipairs(objects:GetChildren()) do
+            if isLikelyEggName(getPhysicalEggName(object)) then
+                count = count + 1
+            end
+        end
+        return count
+    end
+
+    local function selectedEggToolInstances(priority)
+        local tools = {}
+        local seen = {}
+
+        for _, eggName in ipairs(priority or {}) do
+            local entry = Inventory.EggsByName[eggName]
+            for _, instance in ipairs(entry and entry.Instances or {}) do
+                if instance and instance:IsA("Tool") and not seen[instance] then
+                    seen[instance] = true
+                    tools[#tools + 1] = {
+                        Name = eggName,
+                        Tool = instance,
+                    }
+                end
+            end
+        end
+
+        return tools
+    end
+
+    local function placeEquippedEggAt(eggName, cframe, previousCount)
+        local position = cframe.Position
+        local remote = getGameEventRemote("PetEggService")
+        if not remote or not remote:IsA("RemoteEvent") then
+            return false
+        end
+
+        remote:FireServer("CreateEgg", position)
+        task.wait(0.12)
+        if currentPlacedEggCount() > previousCount then
+            return true
+        end
+
+        remote:FireServer("PlaceEgg", position)
+        task.wait(0.12)
+        return currentPlacedEggCount() > previousCount
+    end
+
+    function Actions.PlaceSelectedEggsOnce()
+        local priority = selectedEggPriorityList()
+        if #priority == 0 then
+            log("Egg placement skipped: no eggs selected.")
+            return 0
+        end
+
+        scanInventory()
+
+        local maxEggs = clampNumber(math.floor(tonumber(Config.Hatch.MaxEggsPlaced) or MAX_EGGS_PLACED), 1, 100)
+        local alreadyPlaced = currentPlacedEggCount()
+        local remainingSlots = math.max(0, maxEggs - alreadyPlaced)
+        if remainingSlots <= 0 then
+            log(("Egg placement skipped: local farm already has %d/%d egg(s)."):format(alreadyPlaced, maxEggs))
+            return 0
+        end
+
+        if not getEggPlantLocation() then
+            log("Egg placement skipped: local farm Plant_Locations was not found.")
+            return 0
+        end
+
+        local eggTools = selectedEggToolInstances(priority)
+        if #eggTools == 0 then
+            log("Egg placement skipped: no selected egg tools found. Equip/buy eggs into your backpack first.")
+            return 0
+        end
+
+        local placedCount = 0
+        for _, egg in ipairs(eggTools) do
+            if placedCount >= remainingSlots then
+                break
+            end
+
+            if egg.Tool and egg.Tool.Parent and equipToolInstance(egg.Tool) then
+                task.wait(0.08)
+                local cframe = getEggPlacementCFrame(alreadyPlaced + placedCount + 1)
+                if placeEquippedEggAt(egg.Name, cframe, alreadyPlaced + placedCount) then
+                    placedCount = placedCount + 1
+                    task.wait(0.08)
+                end
+            end
+        end
+
+        if placedCount == 0 then
+            log("Egg placement skipped: selected egg tools were found, but PetEggService did not place them.")
+        else
+            log(("Placed %d egg(s) on local farm (%d/%d max) using %s placement."):format(
+                placedCount,
+                alreadyPlaced + placedCount,
+                maxEggs,
+                tostring(Config.Hatch.EggPlacementMode)
+            ))
+        end
+
+        return placedCount
+    end
+
+    function Actions.RunHatchTeamsOnce()
+        local reductionCount = cyclePetTeam(Config.Hatch.EggReductionPets, "EggReductionIndex", MAX_PETS_EQUIPPED, "Egg reduction team")
+        local remainingSlots = math.max(0, MAX_PETS_EQUIPPED - reductionCount)
+        local supportCount = 0
+
+        if remainingSlots > 0 then
+            supportCount = cyclePetTeam(Config.Hatch.HatchSupportPets, "HatchSupportIndex", remainingSlots, "Hatch support team")
+        end
+
+        if reductionCount == 0 and supportCount == 0 then
+            log("Hatch teams skipped: no reduction/refund/size pets selected.")
+        end
+
+        return reductionCount + supportCount
+    end
+
+    function Actions.LogSelectedHatchBuffs()
+        local lines = {}
+
+        for _, selected in ipairs({
+            Config.Hatch.EggReductionPets,
+            Config.Hatch.HatchSupportPets,
+            Config.Hatch.SealPets,
+        }) do
+            for _, entry in ipairs(selectedPetEntries(selected)) do
+                for _, line in ipairs(collectPetBuffLines(entry)) do
+                    lines[#lines + 1] = line
+                end
+            end
+        end
+
+        if #lines == 0 then
+            log("No hatch/egg/refund/size/seal stat fields detected on selected hatch team pets.")
+            return 0
+        end
+
+        for _, line in ipairs(lines) do
+            log("Detected pet buff: " .. line)
+        end
+
+        return #lines
+    end
+
+    function Actions.SellUnkeptHatchedPets(eggName, petEntries)
+        return sellUnkeptPets(eggName, petEntries, true)
+    end
+end
+
+function Actions.AutoHatch(enabled)
+    log("Auto Hatch " .. (enabled and "enabled" or "disabled"))
+end
+
+function Actions.HatchOnce()
+    local eggObject = findHatchableEggObject()
+    if not eggObject then
+        log("Auto Hatch skipped: no physical egg found in Farm > Objects_Physical.")
+        return false
+    end
+
+    local eggName = getPhysicalEggName(eggObject)
+    local previousPetUuidKeys = captureInventoryPetUuidKeys()
+    Actions.RunHatchTeamsOnce()
+    task.wait(0.2)
+    fireGameEvent("PetEggService", "HatchPet", eggObject)
+    log("HatchPet fired for " .. tostring(eggObject.Name))
+
+    task.delay(2.5, function()
+        if not screenGui.Parent then
+            return
+        end
+
+        scanInventory()
+        local newPetEntries = findNewPetEntries(previousPetUuidKeys)
+        for _, petEntry in ipairs(newPetEntries) do
+            log(("Hatched %s from %s."):format(tostring(petEntry.Name), tostring(eggName)))
+            sendHatchWebhook(eggName, petEntry)
+        end
+        Actions.SellUnkeptHatchedPets(eggName, newPetEntries)
+    end)
+
+    return true
+end
+
+function Actions.AutoMutation(enabled)
+    log("Auto Mutation " .. (enabled and "enabled" or "disabled"))
+end
+
+local function isMutationSelected(name)
+    return Config.Mutation.SelectedMutations[name] == true
+end
+
+local function hasSelectedPetGivenMutation()
+    for mutationName in pairs(PET_GIVEN_MUTATIONS) do
+        if isMutationSelected(mutationName) then
+            return true
+        end
+    end
+
+    return false
+end
+
+function Actions.SubmitMutationPetOnce()
+    local entry = nextSelectedPetEntry(Config.Mutation.PetsToUse, "MutationIndex")
+
+    if not entry then
+        log("Mutation skipped: no selected pet found.")
+        return false
+    end
+
+    cachePetEntryName(entry)
+    local uuid = firstUuid(entry)
+    local petTool = firstToolInstance(entry)
+    if not petTool and uuid then
+        fireGameEvent("PetsService", "UnequipPet", uuid)
+        task.wait(0.4)
+        scanInventory()
+        local latestEntry = findPetEntryByUuidKey(uuidCacheKey(uuid)) or entry
+        petTool = firstToolInstance(latestEntry)
+        entry = latestEntry
+    end
+
+    if not petTool then
+        log("Mutation skipped: selected pet is not available as a held Backpack tool: " .. tostring(entry.Name))
+        return false
+    end
+
+    equipToolInstance(petTool)
+    task.wait(0.15)
+    fireGameEvent("PetMutationMachine", "SubmitHeldPet")
+    log("Submitted mutation pet: " .. tostring(entry.Name))
+    return true
+end
+
+function Actions.LevelMutationPetsOnce()
+    local targetLevel = clampNumber(math.floor(tonumber(Config.Main.LevelTarget) or 100), 1, 100)
+    local firedCount = 0
+
+    for _, entry in ipairs(selectedPetEntries(Config.Mutation.PetsToUse)) do
+        local uuid = firstUuid(entry)
+        local level = getPetLevel(entry)
+
+        if uuid and (not level or level < targetLevel) then
+            cachePetEntryName(entry)
+            local fired = tryFireGameEvent("PetBoostService", "Level", uuid)
+                or tryFireGameEvent("PetBoostService", "XP", uuid)
+                or tryFireGameEvent("ActivePetService", "Feed", uuid)
+
+            if fired then
+                firedCount = firedCount + 1
+            end
+        end
+    end
+
+    if firedCount > 0 then
+        log(("Mutation level team fired for %d pet(s)."):format(firedCount))
+    end
+
+    return firedCount
+end
+
+function Actions.RunMutationCooldownTeamOnce()
+    local entry = nextSelectedPetEntry(Config.Mutation.MutationCooldownPets, "MutationCooldownIndex")
+    if not entry then
+        log("Mutation cooldown skipped: no cooldown team pets selected in Config.")
+        return false
+    end
+
+    local uuid = firstUuid(entry)
+    if not uuid then
+        log("Mutation cooldown skipped: selected pet has no UUID.")
+        return false
+    end
+
+    cachePetEntryName(entry)
+    if not waitForPetAbilityFinished(uuid, firstInstance(entry)) then
+        log("Mutation cooldown skipped: ability-finished check timed out for " .. tostring(entry.Name))
+        return false
+    end
+
+    fireGameEvent("PetsService", "UnequipPet", uuid)
+    task.wait(tonumber(Config.Main.PickUpDelay) or 0.6)
+    fireGameEvent("PetsService", "EquipPet", uuid, getPlacementCFrame())
+    log("Mutation cooldown team cycled: " .. tostring(entry.Name))
+    return true
+end
+
+function Actions.RunPetGivenMutationOnce()
+    local entry = nextSelectedPetEntry(Config.Mutation.PetMutationGivers, "PetMutationGiverIndex")
+    if not entry then
+        log("Pet mutation skipped: no giver pets selected in Config.")
+        return false
+    end
+
+    local uuid = firstUuid(entry)
+    if not uuid then
+        log("Pet mutation skipped: selected giver has no UUID.")
+        return false
+    end
+
+    cachePetEntryName(entry)
+    if not waitForPetAbilityFinished(uuid, firstInstance(entry)) then
+        log("Pet mutation skipped: ability-finished check timed out for " .. tostring(entry.Name))
+        return false
+    end
+
+    fireGameEvent("PetsService", "UnequipPet", uuid)
+    task.wait(tonumber(Config.Main.PickUpDelay) or 0.6)
+    fireGameEvent("PetsService", "EquipPet", uuid, getPlacementCFrame())
+    log("Pet mutation giver cycled: " .. tostring(entry.Name))
+    return true
+end
+
+function Actions.AutoMutationOnce()
+    local ranAny = false
+
+    if isMutationSelected("Mutation Machine") then
+        Actions.LevelMutationPetsOnce()
+        ranAny = Actions.SubmitMutationPetOnce() or ranAny
+        ranAny = Actions.RunMutationCooldownTeamOnce() or ranAny
+    end
+
+    if hasSelectedPetGivenMutation() then
+        ranAny = Actions.RunPetGivenMutationOnce() or ranAny
+    end
+
+    if not ranAny then
+        log("Auto Mutation skipped: select Mutation Machine or Venom/Nightmare/Enchanted in Config.")
+    end
+
+    return ranAny
+end
+
+function Actions.PickAndPlace(enabled)
+    log("Pick & Place " .. (enabled and "enabled" or "disabled") .. " | selected pets")
+end
+
+function Actions.PickAndPlaceOnce()
+    local entry = nextSelectedPetEntry(Config.Main.PickAndPlacePets, "PickAndPlaceIndex")
+    if not entry then
+        log("Pick & Place skipped: no selected pet found.")
+        return false
+    end
+
+    cachePetEntryName(entry)
+    local uuid = firstUuid(entry)
+    if not uuid then
+        log("Pick & Place skipped: selected pet has no UUID.")
+        return false
+    end
+
+    selectedTableRememberUuid(Config.Main.PickAndPlacePets, uuid)
+    local petTool = firstInstance(entry)
+    if not waitForPetAbilityFinished(uuid, petTool) then
+        log("Pick & Place skipped: ability-finished check timed out for " .. tostring(entry.Name))
+        return false
+    end
+
+    unequipPetEntry(entry)
+    task.wait(tonumber(Config.Main.PickUpDelay) or 0.6)
+    selectedTableRememberUuid(Config.Main.PickAndPlacePets, uuid)
+    equipPetEntry(entry, Runtime.PickAndPlaceIndex)
+    task.wait(tonumber(Config.Main.EquipDelay) or 0)
+    queueInventoryRefresh("pick and place cycled")
+    log("Pick & Place cycled pet: " .. tostring(entry.Name))
+    return true
+end
+
+function Actions.MiscToggle(name, enabled)
+    log(name .. " " .. (enabled and "enabled" or "disabled"))
+
+    if name == "Anti Lag" then
+        fireGameEvent("SettingsService", "SetSetting", "PerformanceMode", enabled)
+    elseif name == "Auto Un/Favorite" and enabled then
+        Actions.FavoriteSelectedPetsOnce()
+    elseif name == "Auto Pick Up Fruit" and enabled then
+        Actions.CollectSelectedFruitOnce()
+    elseif name == "Auto Sell Fruit" and enabled then
+        Actions.SellSelectedFruitOnce()
+    elseif name == "Auto Buy" and enabled then
+        Actions.AutoBuySelectedShopsOnce()
+    elseif name == "Auto Place Seeds" and enabled then
+        Actions.PlaceSelectedSeedsOnce()
+    elseif name == "Auto Rebirth" and enabled then
+        Actions.RebirthOnce()
+    end
+end
+
+local mainPage = createPage("Main")
+local configPage = createPage("Config")
+local hatchPage = createPage("Hatch")
+local mutationPage = createPage("Mutation")
+local miscPage = createPage("Misc")
+local logsPage = createPage("Logs")
+
+createNavButton("Main", "Main", 1)
+createNavButton("Config", "Config", 2)
+createNavButton("Hatch", "Auto Hatch", 3)
+createNavButton("Mutation", "Mutation", 4)
+createNavButton("Misc", "Misc", 5)
+createNavButton("Logs", "Logs", 6)
+
+function buildMainPage()
+    local inventorySection = createSection(mainPage, "Inventory Data")
+
+    inventorySummaryLabel = Instance.new("TextLabel")
+    inventorySummaryLabel.BackgroundTransparency = 1
+    inventorySummaryLabel.Size = UDim2.new(1, 0, 0, 22)
+    inventorySummaryLabel.Font = Enum.Font.Gotham
+    inventorySummaryLabel.Text = "Inventory data: scanning..."
+    inventorySummaryLabel.TextColor3 = Theme.Muted
+    inventorySummaryLabel.TextSize = 12
+    inventorySummaryLabel.TextXAlignment = Enum.TextXAlignment.Left
+    inventorySummaryLabel.Parent = inventorySection
+
+    createButton(inventorySection, "Refresh Inventory Data", function()
+        refreshInventoryOptions("manual")
+    end)
+
+    local petSection = createSection(mainPage, "Pet Level & KG")
+
+    createToggle(petSection, "Auto Lvl Pet -> 100", Config.Main.AutoLevelPet, function(enabled)
+        Config.Main.AutoLevelPet = enabled
+        Actions.AutoLevelPet(enabled)
+    end)
+
+    createTextInput(petSection, "Level Target", "100", Config.Main.LevelTarget, function(text)
+        local value = tonumber(text)
+        if value then
+            Config.Main.LevelTarget = clampNumber(math.floor(value), 1, 100)
+            log("Level target set to " .. tostring(Config.Main.LevelTarget))
+        end
+    end)
+
+    UIRefresh.MainLevelPets = createMultiSelect(petSection, "Level Team", OPTIONS.Pets, Config.Main.LevelPets, function()
+        log("Level team updated: " .. selectedListToText(Config.Main.LevelPets))
+    end)
+
+    createToggle(petSection, "Auto KG Boost", Config.Main.AutoKgBoost, function(enabled)
+        Config.Main.AutoKgBoost = enabled
+        Actions.AutoKgBoost(enabled)
+    end)
+
+    local placementSection = createSection(mainPage, "Pick & Place")
+
+    createToggle(placementSection, "Pick & Place", Config.Main.PickAndPlace, function(enabled)
+        Config.Main.PickAndPlace = enabled
+        Actions.PickAndPlace(enabled)
+    end)
+
+    createTextInput(placementSection, "Pickup Delay", "0.6", Config.Main.PickUpDelay, function(text)
+        local value = tonumber(text)
+        if value then
+            Config.Main.PickUpDelay = math.max(0, value)
+            log("Pick & Place pickup delay set to " .. tostring(Config.Main.PickUpDelay))
+        end
+    end)
+
+    createTextInput(placementSection, "Equip Delay After Ability", "0", Config.Main.EquipDelay, function(text)
+        local value = tonumber(text)
+        if value then
+            Config.Main.EquipDelay = math.max(0, value)
+            log("Pick & Place equip delay set to " .. tostring(Config.Main.EquipDelay))
+        end
+    end)
+end
+buildMainPage()
+
+function buildConfigPage()
+    local rulesSection = createSection(configPage, "Rules")
+
+    local ruleLabel = Instance.new("TextLabel")
+    ruleLabel.BackgroundTransparency = 1
+    ruleLabel.Size = UDim2.new(1, 0, 0, 44)
+    ruleLabel.Font = Enum.Font.Gotham
+    ruleLabel.Text = ("Max pets equipped: %d | Max eggs placed: %d | KG target: %.1f KG"):format(
+        MAX_PETS_EQUIPPED,
+        MAX_EGGS_PLACED,
+        KG_BOOST_TARGET_KG
+    )
+    ruleLabel.TextColor3 = Theme.Muted
+    ruleLabel.TextSize = 12
+    ruleLabel.TextWrapped = true
+    ruleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    ruleLabel.Parent = rulesSection
+
+    local levelTeamSection = createSection(configPage, "Level Team")
+
+    createTextInput(levelTeamSection, "Level Target", "100", Config.Main.LevelTarget, function(text)
+        local value = tonumber(text)
+        if value then
+            Config.Main.LevelTarget = clampNumber(math.floor(value), 1, 100)
+            log("Level target set to " .. tostring(Config.Main.LevelTarget))
+        end
+    end)
+
+    UIRefresh.LevelPets = createMultiSelect(levelTeamSection, "Pets To Level", OPTIONS.Pets, Config.Main.LevelPets, function()
+        log("Level pet list updated: " .. selectedListToText(Config.Main.LevelPets))
+    end)
+
+    local kgTeamSection = createSection(configPage, "KG Teams")
+
+    UIRefresh.KgBoosterPets = createMultiSelect(kgTeamSection, "KG Booster Team", OPTIONS.Pets, Config.Main.KgBoosterPets, function()
+        log("KG booster team updated: " .. selectedListToText(Config.Main.KgBoosterPets))
+    end)
+
+    UIRefresh.KgTargetPets = createMultiSelect(kgTeamSection, "Pets To KG Boost", OPTIONS.Pets, Config.Main.KgTargetPets, function()
+        log("KG target list updated: " .. selectedListToText(Config.Main.KgTargetPets))
+    end)
+
+    local mutationTeamSection = createSection(configPage, "Mutation Teams")
+
+    UIRefresh.Mutations = createMultiSelect(mutationTeamSection, "Mutation Types", OPTIONS.Mutations, Config.Mutation.SelectedMutations, function()
+        log("Mutations selected: " .. selectedListToText(Config.Mutation.SelectedMutations))
+    end)
+
+    UIRefresh.MutationPets = createMultiSelect(mutationTeamSection, "Pets To Mutate / Level", OPTIONS.Pets, Config.Mutation.PetsToUse, function()
+        log("Mutation machine pet list updated: " .. selectedListToText(Config.Mutation.PetsToUse))
+    end)
+
+    UIRefresh.MutationCooldownPets = createMultiSelect(mutationTeamSection, "Machine Cooldown Team", OPTIONS.Pets, Config.Mutation.MutationCooldownPets, function()
+        log("Mutation cooldown team updated: " .. selectedListToText(Config.Mutation.MutationCooldownPets))
+    end)
+
+    UIRefresh.PetMutationGivers = createMultiSelect(mutationTeamSection, "Team", OPTIONS.Pets, Config.Mutation.PetMutationGivers, function()
+        log("Pet mutation team updated: " .. selectedListToText(Config.Mutation.PetMutationGivers))
+    end)
+
+    local pickPlaceTeamSection = createSection(configPage, "Pick & Place Team")
+
+    UIRefresh.PickAndPlacePets = createMultiSelect(pickPlaceTeamSection, "Selected Pets", OPTIONS.Pets, Config.Main.PickAndPlacePets, function()
+        log("Pick & Place pet list updated: " .. selectedListToText(Config.Main.PickAndPlacePets))
+    end)
+
+    local webhookSection = createSection(configPage, "Webhook Logs")
+
+    createToggle(webhookSection, "KG Webhook Logs", Config.Misc.WebhookKgLogs, function(enabled)
+        Config.Misc.WebhookKgLogs = enabled
+        log("KG webhook logs " .. (enabled and "enabled" or "disabled"))
+    end)
+
+    createToggle(webhookSection, "Hatch Webhook Logs", Config.Misc.WebhookHatchLogs, function(enabled)
+        Config.Misc.WebhookHatchLogs = enabled
+        log("Hatch webhook logs " .. (enabled and "enabled" or "disabled"))
+    end)
+
+    createTextInput(webhookSection, "Webhook URL", "https://discord.com/api/webhooks/...", Config.Misc.WebhookUrl, function(text)
+        Config.Misc.WebhookUrl = trimText(text)
+        log(Config.Misc.WebhookUrl ~= "" and "Webhook URL updated." or "Webhook URL cleared.")
+    end)
+end
+buildConfigPage()
+
+function buildHatchPage()
+    local hatchSection = createSection(hatchPage, "Hatching")
+    local sellRuleSummary
+    local sellPetsRefresh
+
+    local function updateSelectedEggDependentControls()
+        local eggOptions = normalizeEggPriorityToSelected()
+
+        if Runtime.SelectedSellRuleEgg == "" or not hasOption(eggOptions, Runtime.SelectedSellRuleEgg) then
+            Runtime.SelectedSellRuleEgg = eggOptions[1] or ""
+        end
+
+        for _, eggName in ipairs(eggOptions) do
+            local petOptions = eggPetOptions(eggName)
+            Config.Hatch.SellRulesByEgg[eggName] = Config.Hatch.SellRulesByEgg[eggName] or copyArrayToSelected(petOptions)
+            syncSelectedOptions(Config.Hatch.SellRulesByEgg[eggName], petOptions)
+        end
+
+        for eggName in pairs(Config.Hatch.SellRulesByEgg) do
+            if not hasOption(eggOptions, eggName) then
+                Config.Hatch.SellRulesByEgg[eggName] = nil
+            end
+        end
+
+        if UIRefresh.EggPriority then
+            UIRefresh.EggPriority(Config.Hatch.EggPriority[1], eggOptions, false)
+        end
+
+        if UIRefresh.EggRule then
+            UIRefresh.EggRule(Runtime.SelectedSellRuleEgg, eggOptions, false)
+        end
+
+        if sellRuleSummary then
+            sellRuleSummary.Text = "Keep rule: " .. (Runtime.SelectedSellRuleEgg ~= "" and Runtime.SelectedSellRuleEgg or "No selected eggs")
+        end
+
+        if sellPetsRefresh then
+            local sellPetOptions = eggPetOptions(Runtime.SelectedSellRuleEgg)
+            local currentSellRule = Runtime.SelectedSellRuleEgg ~= ""
+                and (Config.Hatch.SellRulesByEgg[Runtime.SelectedSellRuleEgg] or copyArrayToSelected(sellPetOptions))
+                or copyArrayToSelected({})
+            sellPetsRefresh(currentSellRule, sellPetOptions)
+        end
+    end
+
+    createToggle(hatchSection, "Auto Hatch", Config.Hatch.AutoHatch, function(enabled)
+        Config.Hatch.AutoHatch = enabled
+        Actions.AutoHatch(enabled)
+    end)
+
+    UIRefresh.EggsToHatch = createMultiSelect(hatchSection, "Eggs To Hatch", OPTIONS.Eggs, Config.Hatch.SelectedEggs, function()
+        log("Egg selection updated: " .. selectedListToText(Config.Hatch.SelectedEggs))
+        updateSelectedEggDependentControls()
+    end)
+
+    UIRefresh.EggPriority = createDropdown(hatchSection, "Top Priority Egg", selectedEggRuleOptions(), Config.Hatch.EggPriority[1], function(value)
+        if not value or value == "" then
+            Config.Hatch.EggPriority = {}
+            log("Egg priority cleared.")
+            return
+        end
+
+        Config.Hatch.EggPriority = {value}
+        log("Egg priority set to " .. value)
+    end)
+
+    createButton(hatchSection, "Use Selected Eggs As Priority Rotation", function()
+        Config.Hatch.EggPriority = selectedToPriority(Config.Hatch.SelectedEggs)
+        normalizeEggPriorityToSelected()
+        if UIRefresh.EggPriority then
+            UIRefresh.EggPriority(Config.Hatch.EggPriority[1], selectedEggRuleOptions(), false)
+        end
+        log("Egg priority rotation: " .. table.concat(Config.Hatch.EggPriority, ", "))
+    end)
+
+    createToggle(hatchSection, "Auto Place Eggs", Config.Hatch.AutoPlaceEggs, function(enabled)
+        Config.Hatch.AutoPlaceEggs = enabled
+        log("Auto Place Eggs " .. (enabled and "enabled" or "disabled"))
+    end)
+
+    createTextInput(hatchSection, "Max Eggs Placed", tostring(MAX_EGGS_PLACED), Config.Hatch.MaxEggsPlaced, function(text)
+        local value = tonumber(text)
+        if value then
+            Config.Hatch.MaxEggsPlaced = clampNumber(math.floor(value), 1, 100)
+            log("Max eggs placed set to " .. tostring(Config.Hatch.MaxEggsPlaced))
+        end
+    end)
+
+    createDropdown(hatchSection, "Egg Placement", {"Middle", "Random", "Near Player"}, Config.Hatch.EggPlacementMode, function(value)
+        Config.Hatch.EggPlacementMode = value or "Middle"
+        log("Egg placement mode set to " .. tostring(Config.Hatch.EggPlacementMode))
+    end)
+
+    createTextInput(hatchSection, "Place Egg Interval", "8", Config.Hatch.PlaceEggInterval, function(text)
+        local value = tonumber(text)
+        if value then
+            Config.Hatch.PlaceEggInterval = math.max(2, value)
+            log("Place egg interval set to " .. tostring(Config.Hatch.PlaceEggInterval) .. "s")
+        end
+    end)
+
+    local hatchTeamsSection = createSection(hatchPage, "Hatch Teams")
+
+    UIRefresh.EggReductionPets = createMultiSelect(hatchTeamsSection, "Egg Reduction Team", OPTIONS.Pets, Config.Hatch.EggReductionPets, function()
+        log("Egg reduction team updated: " .. selectedListToText(Config.Hatch.EggReductionPets))
+    end)
+
+    UIRefresh.HatchSupportPets = createMultiSelect(hatchTeamsSection, "Refund / Size Team", OPTIONS.Pets, Config.Hatch.HatchSupportPets, function()
+        log("Refund / size team updated: " .. selectedListToText(Config.Hatch.HatchSupportPets))
+    end)
+
+    UIRefresh.SealPets = createMultiSelect(hatchTeamsSection, "Seal Team", OPTIONS.Pets, Config.Hatch.SealPets, function()
+        log("Seal team updated: " .. selectedListToText(Config.Hatch.SealPets))
+    end)
+
+    createButton(hatchTeamsSection, "Run Hatch Teams Once", function()
+        Actions.RunHatchTeamsOnce()
+    end)
+
+    createButton(hatchTeamsSection, "Detect Selected Pet Buffs", function()
+        Actions.LogSelectedHatchBuffs()
+    end)
+
+    local sellSection = createSection(hatchPage, "Egg Pet Keep Rules")
+
+    createToggle(sellSection, "Sell Non-Keep Pets", Config.Hatch.AutoSellPets, function(enabled)
+        Config.Hatch.AutoSellPets = enabled
+        log("Sell Non-Keep Pets " .. (enabled and "enabled" or "disabled"))
+    end)
+
+    createToggle(sellSection, "Use Seal Team Before Selling", Config.Hatch.AutoSellWithSeal, function(enabled)
+        Config.Hatch.AutoSellWithSeal = enabled
+        log("Use Seal Team Before Selling " .. (enabled and "enabled" or "disabled"))
+    end)
+
+    createToggle(sellSection, "Only Sell Newly Hatched", Config.Hatch.OnlySellNewlyHatched, function(enabled)
+        Config.Hatch.OnlySellNewlyHatched = enabled
+        log("Only Sell Newly Hatched " .. (enabled and "enabled" or "disabled"))
+    end)
+
+    createToggle(sellSection, "Do Not Sell Favorited Pets", Config.Hatch.DontSellFavorited, function(enabled)
+        Config.Hatch.DontSellFavorited = enabled
+        log("Do Not Sell Favorited Pets " .. (enabled and "enabled" or "disabled"))
+    end)
+
+    sellRuleSummary = Instance.new("TextLabel")
+    sellRuleSummary.BackgroundTransparency = 1
+    sellRuleSummary.Size = UDim2.new(1, 0, 0, 22)
+    sellRuleSummary.Font = Enum.Font.Gotham
+    sellRuleSummary.Text = "Keep rule: " .. Runtime.SelectedSellRuleEgg
+    sellRuleSummary.TextColor3 = Theme.Muted
+    sellRuleSummary.TextSize = 12
+    sellRuleSummary.TextXAlignment = Enum.TextXAlignment.Left
+    sellRuleSummary.Parent = sellSection
+    UIRefresh.SellRuleSummary = sellRuleSummary
+
+    UIRefresh.EggRule = createDropdown(sellSection, "Egg Rule", selectedEggRuleOptions(), Runtime.SelectedSellRuleEgg, function(value)
+        if not value or value == "" then
+            return
+        end
+
+        Runtime.SelectedSellRuleEgg = value
+        local petOptions = eggPetOptions(value)
+        Config.Hatch.SellRulesByEgg[value] = Config.Hatch.SellRulesByEgg[value] or copyArrayToSelected(petOptions)
+        syncSelectedOptions(Config.Hatch.SellRulesByEgg[value], petOptions)
+        sellRuleSummary.Text = "Keep rule: " .. value
+        if sellPetsRefresh then
+            sellPetsRefresh(Config.Hatch.SellRulesByEgg[value], petOptions)
+        end
+        log("Editing keep rule for " .. value)
+    end)
+
+    local initialSellPetOptions = eggPetOptions(Runtime.SelectedSellRuleEgg)
+    local initialSellRule = Runtime.SelectedSellRuleEgg ~= ""
+        and (Config.Hatch.SellRulesByEgg[Runtime.SelectedSellRuleEgg] or copyArrayToSelected(initialSellPetOptions))
+        or copyArrayToSelected({})
+    sellPetsRefresh = createMultiSelect(sellSection, "Pets To Keep", initialSellPetOptions, initialSellRule, function(currentSelected)
+        if Runtime.SelectedSellRuleEgg ~= "" then
+            Config.Hatch.SellRulesByEgg[Runtime.SelectedSellRuleEgg] = currentSelected
+            log("Keep pets updated for " .. Runtime.SelectedSellRuleEgg .. ": " .. selectedListToText(currentSelected))
+        end
+    end)
+    UIRefresh.SellPets = sellPetsRefresh
+
+    createButton(sellSection, "Save Current Keep Rule", function()
+        local currentSelected = Config.Hatch.SellRulesByEgg[Runtime.SelectedSellRuleEgg]
+        log("Saved keep rule for " .. Runtime.SelectedSellRuleEgg .. ": " .. selectedListToText(currentSelected))
+    end)
+end
+buildHatchPage()
+
+function buildMutationPage()
+    local mutationSection = createSection(mutationPage, "Auto Mutation")
+
+    createToggle(mutationSection, "Auto Mutation", Config.Mutation.AutoMutation, function(enabled)
+        Config.Mutation.AutoMutation = enabled
+        Actions.AutoMutation(enabled)
+    end)
+
+    createButton(mutationSection, "Refresh Mutation Names", function()
+        if refreshMutationOptionsFromRemote() then
+            syncSelectedOptions(Config.Mutation.SelectedMutations, OPTIONS.Mutations)
+            if UIRefresh.Mutations then
+                UIRefresh.Mutations(Config.Mutation.SelectedMutations, OPTIONS.Mutations)
+            end
+            log("Mutation names refreshed from GetPetMutationNames.")
+        else
+            log("Mutation names refresh skipped: GetPetMutationNames returned no names.")
+        end
+    end)
+
+    createButton(mutationSection, "Run Selected Mutation Once", function()
+        log("Manual mutation requested: " .. selectedListToText(Config.Mutation.SelectedMutations))
+        Actions.AutoMutationOnce()
+    end)
+end
+buildMutationPage()
+
+function buildMiscPage()
+    local feedSection = createSection(miscPage, "Pet Feeding")
+
+    createToggle(feedSection, "Auto Feed Pet", Config.Main.AutoFeedPet, function(enabled)
+        Config.Main.AutoFeedPet = enabled
+        Actions.AutoFeedPet(enabled)
+    end)
+
+    UIRefresh.FeedPets = createMultiSelect(feedSection, "Pets To Feed", OPTIONS.Pets, Config.Main.FeedPets, function()
+        log("Feed pet list updated: " .. selectedListToText(Config.Main.FeedPets))
+    end)
+
+    createTextInput(feedSection, "Hunger Threshold %", "50", Config.Main.HungerThreshold, function(text)
+        local value = tonumber(text)
+        if value then
+            Config.Main.HungerThreshold = clampNumber(value, 0, 100)
+            log("Feed hunger threshold set to " .. tostring(Config.Main.HungerThreshold) .. "%")
+        end
+    end)
+
+    createTextInput(feedSection, "Feed Check Interval", "2", Config.Main.FeedInterval, function(text)
+        local value = tonumber(text)
+        if value then
+            Config.Main.FeedInterval = math.max(0.5, value)
+            log("Feed check interval set to " .. tostring(Config.Main.FeedInterval) .. "s")
+        end
+    end)
+
+    createButton(feedSection, "Feed Hungry Pets Once", function()
+        Actions.FeedHungryPetsOnce()
+    end)
+
+    local favoriteSection = createSection(miscPage, "Auto Favorite")
+
+    createToggle(favoriteSection, "Auto Un/Favorite", Config.Misc.AutoFavorite, function(enabled)
+        Config.Misc.AutoFavorite = enabled
+        Actions.MiscToggle("Auto Un/Favorite", enabled)
+    end)
+
+    createDropdown(favoriteSection, "Mode", {"Favorite", "Unfavorite"}, Config.Misc.FavoriteMode, function(value)
+        Config.Misc.FavoriteMode = value
+        Runtime.FavoriteAppliedByUuid = {}
+        log("Favorite mode set to " .. value)
+    end)
+
+    UIRefresh.FavoritePets = createMultiSelect(favoriteSection, "Pets", OPTIONS.Pets, Config.Misc.FavoritePets, function()
+        log("Favorite pet list updated: " .. selectedListToText(Config.Misc.FavoritePets))
+    end)
+
+    local fruitSection = createSection(miscPage, "Fruit")
+
+    createToggle(fruitSection, "Auto Pick Up Fruit", Config.Misc.AutoPickupFruit, function(enabled)
+        Config.Misc.AutoPickupFruit = enabled
+        Actions.MiscToggle("Auto Pick Up Fruit", enabled)
+    end)
+
+    UIRefresh.FruitsToCollect = createMultiSelect(fruitSection, "Fruit To Collect", OPTIONS.FruitsToCollect, Config.Misc.FruitsToCollect, function()
+        log("Fruit collection list updated: " .. selectedListToText(Config.Misc.FruitsToCollect))
+    end)
+
+    createTextInput(fruitSection, "Fruit Collect Interval", "2", Config.Misc.FruitCollectInterval, function(text)
+        local value = tonumber(text)
+        if value then
+            Config.Misc.FruitCollectInterval = math.max(0.5, value)
+            log("Fruit collect interval set to " .. tostring(Config.Misc.FruitCollectInterval) .. "s")
+        end
+    end)
+
+    createButton(fruitSection, "Collect Fruit Once", function()
+        Actions.CollectSelectedFruitOnce()
+    end)
+
+    createToggle(fruitSection, "Auto Sell Fruit", Config.Misc.AutoSellFruit, function(enabled)
+        Config.Misc.AutoSellFruit = enabled
+        Actions.MiscToggle("Auto Sell Fruit", enabled)
+    end)
+
+    UIRefresh.FruitsToSell = createMultiSelect(fruitSection, "Fruit To Sell", OPTIONS.FruitsToSell, Config.Misc.FruitsToSell, function()
+        log("Fruit sell list updated: " .. selectedListToText(Config.Misc.FruitsToSell))
+    end)
+
+    createButton(fruitSection, "Sell Fruit Once", function()
+        Actions.SellSelectedFruitOnce()
+    end)
+
+    local shopSection = createSection(miscPage, "Shops & Seeds")
+
+    createToggle(shopSection, "Auto Buy From Merchants & Shops", Config.Misc.AutoBuy, function(enabled)
+        Config.Misc.AutoBuy = enabled
+        Actions.MiscToggle("Auto Buy", enabled)
+    end)
+
+    createMultiSelect(shopSection, "Shops", OPTIONS.Shops, Config.Misc.ShopsToBuy, function()
+        log("Shop list updated: " .. selectedListToText(Config.Misc.ShopsToBuy))
+    end)
+
+    createButton(shopSection, "Buy Selected Shops Once", function()
+        Actions.AutoBuySelectedShopsOnce()
+    end)
+
+    createToggle(shopSection, "Auto Place Seeds", Config.Misc.AutoPlaceSeeds, function(enabled)
+        Config.Misc.AutoPlaceSeeds = enabled
+        Actions.MiscToggle("Auto Place Seeds", enabled)
+    end)
+
+    UIRefresh.SeedsToPlace = createMultiSelect(shopSection, "Seeds To Place", OPTIONS.SeedsToPlace, Config.Misc.SeedsToPlace, function()
+        log("Seed placement list updated: " .. selectedListToText(Config.Misc.SeedsToPlace))
+    end)
+
+    local utilitySection = createSection(miscPage, "Utility")
+
+    createToggle(utilitySection, "Anti Lag", Config.Misc.AntiLag, function(enabled)
+        Config.Misc.AntiLag = enabled
+        Actions.MiscToggle("Anti Lag", enabled)
+    end)
+
+    createToggle(utilitySection, "Remove In-Game Textures", Config.Misc.RemoveTextures, function(enabled)
+        Config.Misc.RemoveTextures = enabled
+        Actions.MiscToggle("Remove Textures", enabled)
+    end)
+
+    createToggle(utilitySection, "Auto Reconnect On Disconnect", Config.Misc.AutoReconnect, function(enabled)
+        Config.Misc.AutoReconnect = enabled
+        Actions.MiscToggle("Auto Reconnect", enabled)
+    end)
+
+    createToggle(utilitySection, "Auto Rebirth", Config.Misc.AutoRebirth, function(enabled)
+        Config.Misc.AutoRebirth = enabled
+        Actions.MiscToggle("Auto Rebirth", enabled)
+    end)
+end
+buildMiscPage()
+
+function buildLogsPage()
+    local logsSection = createSection(logsPage, "Activity")
+
+    logList = Instance.new("TextLabel")
+    logList.BackgroundColor3 = Theme.Background
+    logList.BorderSizePixel = 0
+    logList.Size = UDim2.new(1, 0, 0, 380)
+    logList.Font = Enum.Font.Code
+    logList.Text = ""
+    logList.TextColor3 = Theme.Text
+    logList.TextSize = 12
+    logList.TextXAlignment = Enum.TextXAlignment.Left
+    logList.TextYAlignment = Enum.TextYAlignment.Top
+    logList.TextWrapped = false
+    logList.Parent = logsSection
+    makeCorner(logList, 6)
+    makePadding(logList, 10)
+
+    createButton(logsSection, "Clear Logs", function()
+        Runtime.Logs = {}
+        logList.Text = ""
+    end)
+end
+buildLogsPage()
+
+local dragging = false
+local dragStart
+local startPosition
+
+topbar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPosition = window.Position
+    end
+end)
+
+topbar.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        window.Position = UDim2.new(
+            startPosition.X.Scale,
+            startPosition.X.Offset + delta.X,
+            startPosition.Y.Scale,
+            startPosition.Y.Offset + delta.Y
+        )
+    end
+end)
+
+minimizeBtn.MouseButton1Click:Connect(function()
+    Runtime.Minimized = not Runtime.Minimized
+    body.Visible = not Runtime.Minimized
+    window.Size = Runtime.Minimized and UDim2.fromOffset(WINDOW_WIDTH, TOPBAR_HEIGHT) or UDim2.fromOffset(WINDOW_WIDTH, WINDOW_HEIGHT)
+    minimizeBtn.Text = Runtime.Minimized and "+" or "-"
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+    screenGui:Destroy()
+end)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then
+        return
+    end
+
+    if input.KeyCode == Enum.KeyCode.RightShift then
+        window.Visible = not window.Visible
+    end
+end)
+
+local inventoryRefreshQueued = false
+queueInventoryRefresh = function(reason)
+    if inventoryRefreshQueued then
+        return
+    end
+
+    inventoryRefreshQueued = true
+    task.delay(0.25, function()
+        inventoryRefreshQueued = false
+        if screenGui.Parent then
+            refreshInventoryOptions(reason)
+        end
+    end)
+end
+
+local function bindCharacterInventory(newCharacter)
+    character = newCharacter
+    if not character then
+        return
+    end
+
+    character.ChildAdded:Connect(function()
+        queueInventoryRefresh("character item added")
+    end)
+
+    character.ChildRemoved:Connect(function()
+        queueInventoryRefresh("character item removed")
+    end)
+
+    queueInventoryRefresh("character loaded")
+end
+
+backpack.ChildAdded:Connect(function()
+    queueInventoryRefresh("backpack item added")
+end)
+
+backpack.ChildRemoved:Connect(function()
+    queueInventoryRefresh("backpack item removed")
+end)
+
+if character then
+    bindCharacterInventory(character)
+end
+
+localPlayer.CharacterAdded:Connect(bindCharacterInventory)
+
+local function shouldRefreshForFarmNode(instance)
+    return instance.Name == "Plants_Physical"
+        or instance.Name == "Objects_Physical"
+        or (instance.Parent and instance.Parent.Name == "Plants_Physical")
+        or (instance.Parent and instance.Parent.Name == "Objects_Physical")
+end
+
+local function bindFarmInventoryRefresh(farmRoot)
+    if not farmRoot then
+        return
+    end
+
+    farmRoot.DescendantAdded:Connect(function(instance)
+        if shouldRefreshForFarmNode(instance) then
+            queueInventoryRefresh("farm plants changed")
+        end
+    end)
+
+    farmRoot.DescendantRemoving:Connect(function(instance)
+        if shouldRefreshForFarmNode(instance) then
+            queueInventoryRefresh("farm plants changed")
+        end
+    end)
+end
+
+bindFarmInventoryRefresh(Workspace:FindFirstChild("Farm"))
+Workspace.ChildAdded:Connect(function(child)
+    if child.Name == "Farm" then
+        bindFarmInventoryRefresh(child)
+        queueInventoryRefresh("farm loaded")
+    end
+end)
+
+local boundPetMovers = {}
+local boundPetsPhysicalRoots = {}
+
+local function bindPetMoverInventoryRefresh(petMover)
+    if not petMover or boundPetMovers[petMover] then
+        return
+    end
+
+    boundPetMovers[petMover] = true
+
+    petMover.ChildAdded:Connect(function()
+        queueInventoryRefresh("placed pet added")
+    end)
+
+    petMover.ChildRemoved:Connect(function()
+        queueInventoryRefresh("placed pet removed")
+    end)
+end
+
+local function bindPlacedPetInventoryRefresh(petsPhysical)
+    if not petsPhysical then
+        return
+    end
+
+    bindPetMoverInventoryRefresh(petsPhysical:FindFirstChild("PetMover"))
+
+    if boundPetsPhysicalRoots[petsPhysical] then
+        return
+    end
+
+    boundPetsPhysicalRoots[petsPhysical] = true
+
+    petsPhysical.ChildAdded:Connect(function(child)
+        if child.Name == "PetMover" then
+            bindPetMoverInventoryRefresh(child)
+            queueInventoryRefresh("placed pet mover loaded")
+        end
+    end)
+end
+
+bindPlacedPetInventoryRefresh(Workspace:FindFirstChild("PetsPhysical"))
+Workspace.ChildAdded:Connect(function(child)
+    if child.Name == "PetsPhysical" then
+        bindPlacedPetInventoryRefresh(child)
+        queueInventoryRefresh("placed pets loaded")
+    end
+end)
+
+local automationTimers = {
+    Hatch = 0,
+    PlaceEggs = 0,
+    Level = 0,
+    Feed = 0,
+    KgBoost = 0,
+    Favorite = 0,
+    PickupFruit = 0,
+    SellFruit = 0,
+    Buy = 0,
+    PlaceSeeds = 0,
+    Rebirth = 0,
+    PickAndPlace = 0,
+    Mutation = 0,
+}
+
+local automationBusy = {
+    Level = false,
+    Feed = false,
+    KgBoost = false,
+    Favorite = false,
+    PickupFruit = false,
+    Buy = false,
+    PlaceSeeds = false,
+    PickAndPlace = false,
+    Mutation = false,
+    PlaceEggs = false,
+}
+
+task.spawn(function()
+    while screenGui.Parent do
+        local now = os.clock()
+
+        if Config.Hatch.AutoHatch and now - automationTimers.Hatch >= 1.5 then
+            automationTimers.Hatch = now
+            Actions.HatchOnce()
+        end
+
+        if Config.Hatch.AutoPlaceEggs
+            and not automationBusy.PlaceEggs
+            and now - automationTimers.PlaceEggs >= (tonumber(Config.Hatch.PlaceEggInterval) or 8)
+        then
+            automationTimers.PlaceEggs = now
+            automationBusy.PlaceEggs = true
+            task.spawn(function()
+                Actions.PlaceSelectedEggsOnce()
+                automationBusy.PlaceEggs = false
+            end)
+        end
+
+        if Config.Main.AutoLevelPet
+            and not automationBusy.Level
+            and now - automationTimers.Level >= 5
+        then
+            automationTimers.Level = now
+            automationBusy.Level = true
+            task.spawn(function()
+                Actions.LevelSelectedPetsOnce()
+                automationBusy.Level = false
+            end)
+        end
+
+        if Config.Main.AutoFeedPet
+            and not automationBusy.Feed
+            and now - automationTimers.Feed >= (tonumber(Config.Main.FeedInterval) or 2)
+        then
+            automationTimers.Feed = now
+            automationBusy.Feed = true
+            task.spawn(function()
+                Actions.FeedHungryPetsOnce()
+                automationBusy.Feed = false
+            end)
+        end
+
+        if Config.Main.AutoKgBoost
+            and not automationBusy.KgBoost
+            and now - automationTimers.KgBoost >= KG_BOOST_INTERVAL
+        then
+            automationTimers.KgBoost = now
+            automationBusy.KgBoost = true
+            task.spawn(function()
+                local ranBatch = Actions.KgBoostBatchOnce()
+                if not ranBatch then
+                    automationTimers.KgBoost = os.clock() + 30
+                end
+                automationBusy.KgBoost = false
+            end)
+        end
+
+        if Config.Misc.AutoFavorite
+            and not automationBusy.Favorite
+            and now - automationTimers.Favorite >= 6
+        then
+            automationTimers.Favorite = now
+            automationBusy.Favorite = true
+            task.spawn(function()
+                Actions.FavoriteSelectedPetsOnce()
+                automationBusy.Favorite = false
+            end)
+        end
+
+        if Config.Misc.AutoPickupFruit
+            and not automationBusy.PickupFruit
+            and now - automationTimers.PickupFruit >= (tonumber(Config.Misc.FruitCollectInterval) or 2)
+        then
+            automationTimers.PickupFruit = now
+            automationBusy.PickupFruit = true
+            task.spawn(function()
+                Actions.CollectSelectedFruitOnce()
+                automationBusy.PickupFruit = false
+            end)
+        end
+
+        if Config.Misc.AutoSellFruit and now - automationTimers.SellFruit >= 10 then
+            automationTimers.SellFruit = now
+            Actions.SellSelectedFruitOnce()
+        end
+
+        if Config.Misc.AutoBuy
+            and not automationBusy.Buy
+            and now - automationTimers.Buy >= 3
+        then
+            automationTimers.Buy = now
+            automationBusy.Buy = true
+            task.spawn(function()
+                Actions.AutoBuySelectedShopsOnce()
+                automationBusy.Buy = false
+            end)
+        end
+
+        if Config.Misc.AutoPlaceSeeds
+            and not automationBusy.PlaceSeeds
+            and now - automationTimers.PlaceSeeds >= 0.6
+        then
+            automationTimers.PlaceSeeds = now
+            automationBusy.PlaceSeeds = true
+            task.spawn(function()
+                Actions.PlaceSelectedSeedsOnce()
+                automationBusy.PlaceSeeds = false
+            end)
+        end
+
+        if Config.Misc.AutoRebirth and now - automationTimers.Rebirth >= 10 then
+            automationTimers.Rebirth = now
+            Actions.RebirthOnce()
+        end
+
+        if Config.Main.PickAndPlace
+            and not automationBusy.PickAndPlace
+            and now - automationTimers.PickAndPlace >= 2
+        then
+            automationTimers.PickAndPlace = now
+            automationBusy.PickAndPlace = true
+            task.spawn(function()
+                Actions.PickAndPlaceOnce()
+                automationBusy.PickAndPlace = false
+            end)
+        end
+
+        if Config.Mutation.AutoMutation
+            and not automationBusy.Mutation
+            and now - automationTimers.Mutation >= 8
+        then
+            automationTimers.Mutation = now
+            automationBusy.Mutation = true
+            task.spawn(function()
+                Actions.AutoMutationOnce()
+                automationBusy.Mutation = false
+            end)
+        end
+
+        task.wait(0.2)
+    end
+end)
+
+task.spawn(function()
+    while screenGui.Parent do
+        local activeCount = 0
+
+        if Config.Main.AutoLevelPet then activeCount = activeCount + 1 end
+        if Config.Main.AutoFeedPet then activeCount = activeCount + 1 end
+        if Config.Main.AutoKgBoost then activeCount = activeCount + 1 end
+        if Config.Main.PickAndPlace then activeCount = activeCount + 1 end
+        if Config.Hatch.AutoHatch then activeCount = activeCount + 1 end
+        if Config.Hatch.AutoPlaceEggs then activeCount = activeCount + 1 end
+        if Config.Hatch.AutoSellPets then activeCount = activeCount + 1 end
+        if Config.Mutation.AutoMutation then activeCount = activeCount + 1 end
+        if Config.Misc.AutoFavorite then activeCount = activeCount + 1 end
+        if Config.Misc.AutoPickupFruit then activeCount = activeCount + 1 end
+        if Config.Misc.AutoSellFruit then activeCount = activeCount + 1 end
+        if Config.Misc.AutoBuy then activeCount = activeCount + 1 end
+        if Config.Misc.AutoPlaceSeeds then activeCount = activeCount + 1 end
+        if Config.Misc.AutoReconnect then activeCount = activeCount + 1 end
+        if Config.Misc.AutoRebirth then activeCount = activeCount + 1 end
+
+        if activeCount > 0 then
+            setStatus(tostring(activeCount) .. " enabled")
+        else
+            setStatus("Idle")
+        end
+
+        RunService.Heartbeat:Wait()
+    end
+end)
+
+refreshInventoryOptions("initial")
+switchTab("Main")
+log("Main GUI loaded. Backpack-driven options active. Wire automation loops inside the Actions table.")
