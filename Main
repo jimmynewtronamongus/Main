@@ -2045,6 +2045,18 @@ end
 function collectPhysicalEggObjects()
     local eggs = {}
     local seen = {}
+    local function eggRootFor(object, objectsContainer)
+        local current = object
+        while current and current.Parent and current.Parent ~= objectsContainer do
+            if current.Parent.Name == "PetEgg" or isLikelyEggName(current.Parent.Name) then
+                current = current.Parent
+            else
+                break
+            end
+        end
+        return current
+    end
+
     local function add(object)
         if object and not seen[object] and isLikelyEggName(getPhysicalEggName(object)) then
             seen[object] = true
@@ -2058,7 +2070,7 @@ function collectPhysicalEggObjects()
         end
         for _, descendant in ipairs(objects:GetDescendants()) do
             if descendant.Name == "PetEgg" or isLikelyEggName(descendant.Name) then
-                add(descendant)
+                add(eggRootFor(descendant, objects))
             end
         end
     end
