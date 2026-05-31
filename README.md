@@ -3,7 +3,7 @@
 Use this safer loader so errors show clearly:
 
 ```lua
-local url = "https://raw.githubusercontent.com/jimmynewtronamongus/Main/main/Main"
+local url = "https://raw.githubusercontent.com/jimmynewtronamongus/Main/refs/heads/main/Main"
 
 if type(loadstring) ~= "function" then
     error("loadstring is not available in this environment")
@@ -31,5 +31,5 @@ end
 Short version:
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/jimmynewtronamongus/Main/main/Main"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/jimmynewtronamongus/Main/refs/heads/main/Main"))()
 ```
