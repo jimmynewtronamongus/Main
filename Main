@@ -407,6 +407,9 @@ function getAttributeText(instance)
             or descendant:IsA("BoolValue")
         then
             parts[#parts + 1] = tostring(descendant.Value)
+        elseif descendant:IsA("ObjectValue") and descendant.Value then
+            parts[#parts + 1] = descendant.Value.Name
+            parts[#parts + 1] = descendant.Value.ClassName
         end
 
         local okDescAttributes, descAttributes = pcall(function()
@@ -467,6 +470,11 @@ function getMetadataTextField(instance, names)
     for _, descendant in ipairs(instance:GetDescendants()) do
         if descendant:IsA("StringValue") and metadataKeyMatchesAny(descendant.Name, names) then
             local cleaned = stripStackData(descendant.Value)
+            if cleaned ~= "" and not isUuidOnlyName(cleaned) then
+                return cleaned
+            end
+        elseif descendant:IsA("ObjectValue") and descendant.Value and metadataKeyMatchesAny(descendant.Name, names) then
+            local cleaned = stripStackData(descendant.Value.Name)
             if cleaned ~= "" and not isUuidOnlyName(cleaned) then
                 return cleaned
             end
@@ -2195,7 +2203,7 @@ windowGradient.Color = ColorSequence.new({
 windowGradient.Rotation = 90
 windowGradient.Parent = window
 
-local topbar = Instance.new("Frame")
+topbar = Instance.new("Frame")
 topbar.Name = "Topbar"
 topbar.BackgroundColor3 = Theme.Background
 topbar.BorderSizePixel = 0
@@ -4057,6 +4065,32 @@ function installHatchActions()
             return predicted
         end
 
+        local searchText = getAttributeText(eggObject):gsub("[^%w]", "")
+        local bestName
+
+        local function scanOptionList(options)
+            for _, petName in ipairs(options or {}) do
+                local normalized = tostring(petName or ""):lower():gsub("[^%w]", "")
+                if normalized ~= ""
+                    and not isLikelyEggName(petName)
+                    and searchText:find(normalized, 1, true)
+                then
+                    if not bestName or #petName > #bestName then
+                        bestName = petName
+                    end
+                end
+            end
+        end
+
+        scanOptionList(OPTIONS.Pets)
+        for _, petOptions in pairs(OPTIONS.EggPetsByEgg or {}) do
+            scanOptionList(petOptions)
+        end
+
+        if bestName then
+            return bestName
+        end
+
         return "Unknown pet"
     end
 
@@ -4279,6 +4313,69 @@ function installHatchActions()
         end
     end
 
+    local function readBuffPercent(entry, includeKeywords, fallbackPercent)
+        local best
+
+        local function matches(name)
+            local normalized = tostring(name or ""):lower():gsub("[^%w]", "")
+            if normalized == "" then
+                return false
+            end
+
+            local matchedSpecific = false
+            for _, keyword in ipairs(includeKeywords or {}) do
+                local wanted = tostring(keyword or ""):lower():gsub("[^%w]", "")
+                if wanted ~= "" and normalized:find(wanted, 1, true) then
+                    matchedSpecific = true
+                    break
+                end
+            end
+
+            return matchedSpecific
+                and (
+                    normalized:find("chance", 1, true)
+                    or normalized:find("percent", 1, true)
+                    or normalized:find("boost", 1, true)
+                    or normalized:find("refund", 1, true)
+                    or normalized:find("eggback", 1, true)
+                    or normalized:find("size", 1, true)
+                )
+        end
+
+        local function record(name, value)
+            if type(value) ~= "number" or not matches(name) then
+                return
+            end
+
+            if value <= 1 then
+                value = value * 100
+            end
+
+            if not best or value > best then
+                best = value
+            end
+        end
+
+        for _, instance in ipairs(entry and entry.Instances or {}) do
+            local ok, attributes = pcall(function()
+                return instance:GetAttributes()
+            end)
+            if ok and type(attributes) == "table" then
+                for key, value in pairs(attributes) do
+                    record(key, value)
+                end
+            end
+
+            for _, descendant in ipairs(instance:GetDescendants()) do
+                if descendant:IsA("NumberValue") or descendant:IsA("IntValue") then
+                    record(descendant.Name, descendant.Value)
+                end
+            end
+        end
+
+        return best or fallbackPercent
+    end
+
     local function collectPetBuffLines(entry)
         local lines = {}
         local seen = {}
@@ -4315,11 +4412,11 @@ function installHatchActions()
         end
 
         if lowerName:find("seal", 1, true) then
-            addEstimate("sell egg refund chance", readNumericField(firstInstance(entry), {"Refund", "EggBack", "SellEgg", "Chance", "Percent"}) or 0)
+            addEstimate("sell egg refund chance", readBuffPercent(entry, {"seal", "sell", "refund", "eggback"}, nil))
         elseif lowerName:find("koi", 1, true) then
-            addEstimate("hatch egg refund chance", readNumericField(firstInstance(entry), {"Refund", "EggBack", "HatchEgg", "Chance", "Percent"}) or 0)
-        elseif lowerName:find("bronto", 1, true) then
-            addEstimate("hatch size boost", readNumericField(firstInstance(entry), {"SizeBoost", "HatchSize", "PetSize", "Boost", "Percent"}) or 30)
+            addEstimate("hatch egg refund chance", readBuffPercent(entry, {"koi", "hatch", "refund", "eggback"}, nil))
+        elseif lowerName:find("bronto", 1, true) or lowerName:find("brontosaurus", 1, true) then
+            addEstimate("hatch size boost", readBuffPercent(entry, {"bronto", "hatch", "size", "boost"}, 30))
         end
 
         return lines
@@ -4454,6 +4551,9 @@ function installHatchActions()
 
     function Actions.LogSelectedHatchBuffs()
         local lines = {}
+        local sellRefundTotal = 0
+        local hatchRefundTotal = 0
+        local sizeBoostTotal = 0
 
         for _, selected in ipairs({
             Config.Hatch.EggReductionPets,
@@ -4464,7 +4564,26 @@ function installHatchActions()
                 for _, line in ipairs(collectPetBuffLines(entry)) do
                     lines[#lines + 1] = line
                 end
+
+                local lowerName = tostring(entry.Name or ""):lower()
+                if lowerName:find("seal", 1, true) then
+                    sellRefundTotal = sellRefundTotal + (readBuffPercent(entry, {"seal", "sell", "refund", "eggback"}, 0) or 0)
+                elseif lowerName:find("koi", 1, true) then
+                    hatchRefundTotal = hatchRefundTotal + (readBuffPercent(entry, {"koi", "hatch", "refund", "eggback"}, 0) or 0)
+                elseif lowerName:find("bronto", 1, true) or lowerName:find("brontosaurus", 1, true) then
+                    sizeBoostTotal = sizeBoostTotal + (readBuffPercent(entry, {"bronto", "hatch", "size", "boost"}, 30) or 0)
+                end
             end
+        end
+
+        if sellRefundTotal > 0 then
+            lines[#lines + 1] = ("Team total | sell egg refund chance = %.1f%%"):format(sellRefundTotal)
+        end
+        if hatchRefundTotal > 0 then
+            lines[#lines + 1] = ("Team total | hatch egg refund chance = %.1f%%"):format(hatchRefundTotal)
+        end
+        if sizeBoostTotal > 0 then
+            lines[#lines + 1] = ("Team total | hatch size boost = %.1f%%"):format(sizeBoostTotal)
         end
 
         if #lines == 0 then
