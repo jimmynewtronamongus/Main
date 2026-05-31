@@ -2886,6 +2886,51 @@ function createSection(parent, titleText)
     return section
 end
 
+function createCollapsibleSection(parent, titleText, defaultOpen)
+    local section = createSection(parent, titleText)
+    local open = defaultOpen == true
+
+    local toggle = Instance.new("TextButton")
+    toggle.Name = "SectionToggle"
+    toggle.BackgroundColor3 = Theme.Input
+    toggle.BorderSizePixel = 0
+    toggle.Size = UDim2.new(1, 0, 0, 30)
+    toggle.Font = Enum.Font.GothamBold
+    toggle.TextColor3 = Theme.Muted
+    toggle.TextSize = 12
+    toggle.TextXAlignment = Enum.TextXAlignment.Left
+    toggle.Parent = section
+    makeCorner(toggle, 6)
+    makeStroke(toggle, Theme.StrokeSoft, 1)
+    makePadding(toggle, 10)
+
+    local content = Instance.new("Frame")
+    content.Name = "Content"
+    content.BackgroundTransparency = 1
+    content.Size = UDim2.new(1, 0, 0, 0)
+    content.AutomaticSize = Enum.AutomaticSize.Y
+    content.Visible = open
+    content.Parent = section
+
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 9)
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Parent = content
+
+    local function refresh()
+        content.Visible = open
+        toggle.Text = open and "Hide" or "Show"
+    end
+
+    toggle.MouseButton1Click:Connect(function()
+        open = not open
+        refresh()
+    end)
+
+    refresh()
+    return content
+end
+
 function createRow(parent, height)
     local row = Instance.new("Frame")
     row.BackgroundColor3 = Theme.PanelAlt
@@ -5373,15 +5418,14 @@ local mutationPage = createPage("Mutation")
 local miscPage = createPage("Misc")
 local logsPage = createPage("Logs")
 
-createNavButton("Main", "Dashboard", 1)
-createNavButton("Config", "Teams", 2)
-createNavButton("Hatch", "Hatch & Keep", 3)
-createNavButton("Mutation", "Mutation", 4)
-createNavButton("Misc", "Farms & Shops", 5)
-createNavButton("Logs", "Logs", 6)
+createNavButton("Main", "Pets", 1)
+createNavButton("Hatch", "Hatch", 2)
+createNavButton("Config", "Advanced", 3)
+createNavButton("Misc", "Utility", 4)
+createNavButton("Logs", "Logs", 5)
 
 function buildMainPage()
-    local inventorySection = createSection(mainPage, "Inventory Data")
+    local inventorySection = createSection(mainPage, "Status")
 
     inventorySummaryLabel = Instance.new("TextLabel")
     inventorySummaryLabel.BackgroundTransparency = 1
@@ -5393,13 +5437,13 @@ function buildMainPage()
     inventorySummaryLabel.TextXAlignment = Enum.TextXAlignment.Left
     inventorySummaryLabel.Parent = inventorySection
 
-    createButton(inventorySection, "Refresh Inventory Data", function()
+    createButton(inventorySection, "Refresh Pets / Eggs", function()
         refreshInventoryOptions("manual")
     end)
 
-    local petSection = createSection(mainPage, "Pet Level & KG")
+    local petSection = createSection(mainPage, "Pet Automation")
 
-    createToggle(petSection, "Auto Lvl Pet -> 100", Config.Main.AutoLevelPet, function(enabled)
+    createToggle(petSection, "Auto Level", Config.Main.AutoLevelPet, function(enabled)
         Config.Main.AutoLevelPet = enabled
         Actions.AutoLevelPet(enabled)
     end)
@@ -5412,7 +5456,7 @@ function buildMainPage()
         end
     end)
 
-    UIRefresh.MainLevelPets = createMultiSelect(petSection, "Level Team", OPTIONS.Pets, Config.Main.LevelPets, function()
+    UIRefresh.MainLevelPets = createMultiSelect(petSection, "Pets To Level", OPTIONS.Pets, Config.Main.LevelPets, function()
         log("Level team updated: " .. selectedListToText(Config.Main.LevelPets))
     end)
 
@@ -5421,7 +5465,7 @@ function buildMainPage()
         Actions.AutoKgBoost(enabled)
     end)
 
-    local placementSection = createSection(mainPage, "Pick & Place")
+    local placementSection = createCollapsibleSection(mainPage, "Pick & Place", false)
 
     createToggle(placementSection, "Pick & Place", Config.Main.PickAndPlace, function(enabled)
         Config.Main.PickAndPlace = enabled
@@ -5447,7 +5491,7 @@ end
 buildMainPage()
 
 function buildConfigPage()
-    local rulesSection = createSection(configPage, "Rules")
+    local rulesSection = createSection(configPage, "Advanced Settings")
 
     local ruleLabel = Instance.new("TextLabel")
     ruleLabel.BackgroundTransparency = 1
@@ -5464,7 +5508,7 @@ function buildConfigPage()
     ruleLabel.TextXAlignment = Enum.TextXAlignment.Left
     ruleLabel.Parent = rulesSection
 
-    local levelTeamSection = createSection(configPage, "Level Team")
+    local levelTeamSection = createCollapsibleSection(configPage, "Level Team", false)
 
     createTextInput(levelTeamSection, "Level Target", "100", Config.Main.LevelTarget, function(text)
         local value = tonumber(text)
@@ -5478,7 +5522,7 @@ function buildConfigPage()
         log("Level pet list updated: " .. selectedListToText(Config.Main.LevelPets))
     end)
 
-    local kgTeamSection = createSection(configPage, "KG Teams")
+    local kgTeamSection = createCollapsibleSection(configPage, "KG Teams", false)
 
     UIRefresh.KgBoosterPets = createMultiSelect(kgTeamSection, "KG Booster Team", OPTIONS.Pets, Config.Main.KgBoosterPets, function()
         log("KG booster team updated: " .. selectedListToText(Config.Main.KgBoosterPets))
@@ -5488,7 +5532,7 @@ function buildConfigPage()
         log("KG target list updated: " .. selectedListToText(Config.Main.KgTargetPets))
     end)
 
-    local mutationTeamSection = createSection(configPage, "Mutation Teams")
+    local mutationTeamSection = createCollapsibleSection(configPage, "Mutation Teams", false)
 
     UIRefresh.Mutations = createMultiSelect(mutationTeamSection, "Mutation Types", OPTIONS.Mutations, Config.Mutation.SelectedMutations, function()
         log("Mutations selected: " .. selectedListToText(Config.Mutation.SelectedMutations))
@@ -5506,13 +5550,13 @@ function buildConfigPage()
         log("Pet mutation team updated: " .. selectedListToText(Config.Mutation.PetMutationGivers))
     end)
 
-    local pickPlaceTeamSection = createSection(configPage, "Pick & Place Team")
+    local pickPlaceTeamSection = createCollapsibleSection(configPage, "Pick & Place Team", false)
 
     UIRefresh.PickAndPlacePets = createMultiSelect(pickPlaceTeamSection, "Selected Pets", OPTIONS.Pets, Config.Main.PickAndPlacePets, function()
         log("Pick & Place pet list updated: " .. selectedListToText(Config.Main.PickAndPlacePets))
     end)
 
-    local webhookSection = createSection(configPage, "Webhook Logs")
+    local webhookSection = createCollapsibleSection(configPage, "Webhook Logs", false)
 
     createToggle(webhookSection, "KG Webhook Logs", Config.Misc.WebhookKgLogs, function(enabled)
         Config.Misc.WebhookKgLogs = enabled
@@ -5648,7 +5692,7 @@ function buildHatchPage()
         end
     end)
 
-    local hatchTeamsSection = createSection(hatchPage, "Buff Teams")
+    local hatchTeamsSection = createCollapsibleSection(hatchPage, "Buff Teams", false)
 
     UIRefresh.EggReductionPets = createMultiSelect(hatchTeamsSection, "Egg Cooldown Team", OPTIONS.Pets, Config.Hatch.EggReductionPets, function()
         log("Egg reduction team updated: " .. selectedListToText(Config.Hatch.EggReductionPets))
@@ -5683,7 +5727,7 @@ function buildHatchPage()
         Actions.LogSelectedHatchBuffs()
     end)
 
-    local sellSection = createSection(hatchPage, "Sell Protection")
+    local sellSection = createCollapsibleSection(hatchPage, "Sell Protection", false)
 
     createToggle(sellSection, "Sell Pets Not Kept", Config.Hatch.AutoSellPets, function(enabled)
         Config.Hatch.AutoSellPets = enabled
@@ -5804,7 +5848,7 @@ end
 buildMutationPage()
 
 function buildMiscPage()
-    local feedSection = createSection(miscPage, "Pet Feeding")
+    local feedSection = createCollapsibleSection(miscPage, "Pet Feeding", false)
 
     createToggle(feedSection, "Auto Feed Pet", Config.Main.AutoFeedPet, function(enabled)
         Config.Main.AutoFeedPet = enabled
@@ -5835,7 +5879,7 @@ function buildMiscPage()
         Actions.FeedHungryPetsOnce()
     end)
 
-    local favoriteSection = createSection(miscPage, "Auto Favorite")
+    local favoriteSection = createCollapsibleSection(miscPage, "Auto Favorite", false)
 
     createToggle(favoriteSection, "Auto Un/Favorite", Config.Misc.AutoFavorite, function(enabled)
         Config.Misc.AutoFavorite = enabled
@@ -5852,7 +5896,7 @@ function buildMiscPage()
         log("Favorite pet list updated: " .. selectedListToText(Config.Misc.FavoritePets))
     end)
 
-    local fruitSection = createSection(miscPage, "Fruit")
+    local fruitSection = createCollapsibleSection(miscPage, "Fruit")
 
     createToggle(fruitSection, "Auto Pick Up Fruit", Config.Misc.AutoPickupFruit, function(enabled)
         Config.Misc.AutoPickupFruit = enabled
@@ -5888,7 +5932,7 @@ function buildMiscPage()
         Actions.SellSelectedFruitOnce()
     end)
 
-    local shopSection = createSection(miscPage, "Shops & Seeds")
+    local shopSection = createCollapsibleSection(miscPage, "Shops & Seeds", false)
 
     createToggle(shopSection, "Auto Buy From Merchants & Shops", Config.Misc.AutoBuy, function(enabled)
         Config.Misc.AutoBuy = enabled
@@ -5912,7 +5956,7 @@ function buildMiscPage()
         log("Seed placement list updated: " .. selectedListToText(Config.Misc.SeedsToPlace))
     end)
 
-    local utilitySection = createSection(miscPage, "Utility")
+    local utilitySection = createSection(miscPage, "Quick Toggles")
 
     createToggle(utilitySection, "Anti Lag", Config.Misc.AntiLag, function(enabled)
         Config.Misc.AntiLag = enabled
