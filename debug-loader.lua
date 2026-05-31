@@ -1,4 +1,4 @@
-local url = "https://raw.githubusercontent.com/jimmynewtronamongus/Main/codex-initial-link/Main"
+local url = "https://raw.githubusercontent.com/jimmynewtronamongus/Main/main/Main"
 
 if type(loadstring) ~= "function" then
     warn("loadstring is not available in this executor/environment.")
