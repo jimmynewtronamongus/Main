@@ -815,6 +815,19 @@ function classifyInventoryItem(instance)
     return nil, displayName
 end
 
+function formatPetDisplayName(baseName, kg)
+    local cleanedName = stripStackData(baseName)
+    if cleanedName == "" or cleanedName:match("^Placed Pet ") or isUuidOnlyName(cleanedName) then
+        cleanedName = "Unknown Pet"
+    end
+
+    if kg then
+        return ("%s [%.2f KG]"):format(cleanedName, kg)
+    end
+
+    return cleanedName
+end
+
 function resetInventory()
     Inventory.Eggs = {}
     Inventory.Pets = {}
@@ -938,10 +951,106 @@ function getTextField(instance, names)
     return nil
 end
 
+function getNumericFieldFromInstance(root, names, excludedNames)
+    if not root then
+        return nil
+    end
+
+    excludedNames = excludedNames or {}
+    local function normalize(value)
+        return tostring(value or ""):lower():gsub("[^%w]", "")
+    end
+    local function keyMatches(key, wantedNames)
+        local normalized = normalize(key)
+        for _, name in ipairs(wantedNames or {}) do
+            local wanted = normalize(name)
+            if wanted ~= "" and normalized:find(wanted, 1, true) then
+                return true
+            end
+        end
+        return false
+    end
+
+    local okAttributes, attributes = pcall(function()
+        return root:GetAttributes()
+    end)
+    if okAttributes and type(attributes) == "table" then
+        for key, value in pairs(attributes) do
+            if type(value) == "number" and keyMatches(key, names) and not keyMatches(key, excludedNames) then
+                return value
+            end
+        end
+    end
+
+    for _, descendant in ipairs(root:GetDescendants()) do
+        if (descendant:IsA("NumberValue") or descendant:IsA("IntValue"))
+            and keyMatches(descendant.Name, names)
+            and not keyMatches(descendant.Name, excludedNames)
+        then
+            return descendant.Value
+        end
+    end
+
+    return nil
+end
+
+function getPetModelKg(petModel)
+    local nameText = tostring(petModel and petModel.Name or "")
+    local kgText = nameText:match("%[(%d+%.?%d*)%s*[Kk][Gg]%]")
+        or nameText:match("(%d+%.?%d*)%s*[Kk][Gg]")
+    if kgText then
+        return tonumber(kgText)
+    end
+
+    return getNumericFieldFromInstance(petModel, {
+        "KG",
+        "Weight",
+        "Mass",
+        "BaseWeight",
+        "BaseKG",
+        "BaseMass",
+    }, {
+        "Max",
+        "Target",
+        "Goal",
+        "Boost",
+    })
+end
+
+function findPetBaseNameInText(text)
+    local normalizedText = tostring(text or ""):lower():gsub("[^%w]", "")
+    local bestName
+
+    for _, petName in ipairs(OPTIONS.Pets or {}) do
+        local cleaned = stripStackData(petName)
+        local normalized = cleaned:lower():gsub("[^%w]", "")
+        if normalized ~= "" and normalizedText:find(normalized, 1, true) then
+            if not bestName or #cleaned > #bestName then
+                bestName = cleaned
+            end
+        end
+    end
+
+    for _, petOptions in pairs(OPTIONS.EggPetsByEgg or {}) do
+        for _, petName in ipairs(petOptions or {}) do
+            local cleaned = stripStackData(petName)
+            local normalized = cleaned:lower():gsub("[^%w]", "")
+            if normalized ~= "" and normalizedText:find(normalized, 1, true) then
+                if not bestName or #cleaned > #bestName then
+                    bestName = cleaned
+                end
+            end
+        end
+    end
+
+    return bestName
+end
+
 function getPhysicalPetDisplayName(petModel, uuid)
     local cachedName = PetDisplayNamesByUuid[uuidCacheKey(uuid)]
+    local kg = getPetModelKg(petModel)
     if cachedName and cachedName ~= "" then
-        return cachedName
+        return formatPetDisplayName(cachedName, kg)
     end
 
     local directName = getTextField(petModel, {
@@ -953,8 +1062,9 @@ function getPhysicalPetDisplayName(petModel, uuid)
     })
 
     if directName then
+        directName = stripStackData(directName)
         PetDisplayNamesByUuid[uuidCacheKey(uuid)] = directName
-        return directName
+        return formatPetDisplayName(directName, kg)
     end
 
     for _, descendant in ipairs(petModel:GetDescendants()) do
@@ -967,28 +1077,20 @@ function getPhysicalPetDisplayName(petModel, uuid)
         })
 
         if descendantName then
+            descendantName = stripStackData(descendantName)
             PetDisplayNamesByUuid[uuidCacheKey(uuid)] = descendantName
-            return descendantName
+            return formatPetDisplayName(descendantName, kg)
         end
     end
 
-    local searchText = getAttributeText(petModel)
-    local bestName
-    for _, petName in ipairs(OPTIONS.Pets or {}) do
-        local normalized = tostring(petName or ""):lower():gsub("[^%w]", "")
-        if normalized ~= "" and searchText:gsub("[^%w]", ""):find(normalized, 1, true) then
-            if not bestName or #petName > #bestName then
-                bestName = petName
-            end
-        end
-    end
+    local bestName = findPetBaseNameInText(getAttributeText(petModel))
 
     if bestName then
         PetDisplayNamesByUuid[uuidCacheKey(uuid)] = bestName
-        return bestName
+        return formatPetDisplayName(bestName, kg)
     end
 
-    return "Placed Pet " .. tostring(uuid)
+    return formatPetDisplayName(nil, kg)
 end
 
 function isLocalPlacedPet(petModel, uuid)
@@ -3378,6 +3480,12 @@ function Actions.LevelSelectedPetsOnce()
 end
 
 function getPetKg(entry)
+    local entryKgText = tostring(entry and entry.Name or ""):match("%[(%d+%.?%d*)%s*[Kk][Gg]%]")
+        or tostring(entry and entry.Name or ""):match("(%d+%.?%d*)%s*[Kk][Gg]")
+    if entryKgText then
+        return tonumber(entryKgText)
+    end
+
     for _, instance in ipairs(entry and entry.Instances or {}) do
         local kgText = tostring(instance.Name):match("%[(%d+%.?%d*)%s*[Kk][Gg]%]")
             or tostring(instance.Name):match("(%d+%.?%d*)%s*[Kk][Gg]")
