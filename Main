@@ -21,7 +21,7 @@ if not localPlayer then
     return
 end
 
-local function getGuiParent()
+function getGuiParent()
     local ok, coreGui = pcall(function()
         return game:GetService("CoreGui")
     end)
@@ -147,7 +147,7 @@ local RemotePaths = {
     TradeAddItem = {"TradeEvents", "AddItem"},
 }
 
-local function getGameEventRemote(name)
+function getGameEventRemote(name)
     local path = RemotePaths[name]
     if not path then
         return nil
@@ -160,7 +160,7 @@ local function getGameEventRemote(name)
     return node
 end
 
-local function fireGameEvent(name, ...)
+function fireGameEvent(name, ...)
     local remote = getGameEventRemote(name)
     if remote and remote:IsA("RemoteEvent") then
         remote:FireServer(...)
@@ -175,7 +175,7 @@ local function fireGameEvent(name, ...)
     return false
 end
 
-local function findGameEventRemote(name)
+function findGameEventRemote(name)
     local path = RemotePaths[name]
     if not path then
         return nil
@@ -208,7 +208,7 @@ local function findGameEventRemote(name)
     return nil
 end
 
-local function tryFireGameEvent(name, ...)
+function tryFireGameEvent(name, ...)
     local remote = findGameEventRemote(name)
     if not remote then
         return false
@@ -229,7 +229,7 @@ local function tryFireGameEvent(name, ...)
     return false
 end
 
-local function callWithArgs(callback, args)
+function callWithArgs(callback, args)
     args = args or {}
     local count = #args
 
@@ -250,7 +250,7 @@ local function callWithArgs(callback, args)
     return callback(args[1], args[2], args[3], args[4], args[5], args[6])
 end
 
-local function clampNumber(value, minValue, maxValue)
+function clampNumber(value, minValue, maxValue)
     value = tonumber(value) or 0
     minValue = tonumber(minValue) or value
     maxValue = tonumber(maxValue) or value
@@ -266,7 +266,7 @@ local function clampNumber(value, minValue, maxValue)
     return value
 end
 
-local function tryFireGameEventAny(name, argSets)
+function tryFireGameEventAny(name, argSets)
     for _, args in ipairs(argSets) do
         if callWithArgs(function(...)
             return tryFireGameEvent(name, ...)
@@ -278,7 +278,7 @@ local function tryFireGameEventAny(name, argSets)
     return false
 end
 
-local function fireGameEventAll(name, argSets, delaySeconds)
+function fireGameEventAll(name, argSets, delaySeconds)
     local firedCount = 0
 
     for _, args in ipairs(argSets) do
@@ -295,7 +295,7 @@ local function fireGameEventAll(name, argSets, delaySeconds)
     return firedCount
 end
 
-local function callGameEvent(name, ...)
+function callGameEvent(name, ...)
     local remote = findGameEventRemote(name)
     if not remote then
         return false, nil
@@ -316,11 +316,11 @@ local function callGameEvent(name, ...)
     return false, nil
 end
 
-local function trimText(text)
+function trimText(text)
     return tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
 end
 
-local function stripStackData(name)
+function stripStackData(name)
     local cleaned = tostring(name or "")
     cleaned = cleaned:gsub("%s*%b[]", "")
     cleaned = cleaned:gsub("%s+x%d+$", "")
@@ -328,13 +328,13 @@ local function stripStackData(name)
     return trimText(cleaned)
 end
 
-local function stripSeedSuffix(name)
+function stripSeedSuffix(name)
     local cleaned = stripStackData(name)
     cleaned = cleaned:gsub("%s+[Ss]eeds?$", "")
     return trimText(cleaned)
 end
 
-local function canonicalizeUuid(value)
+function canonicalizeUuid(value)
     local text = tostring(value or "")
     local uuid = text:match("{(%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x)}")
         or text:match("(%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x)")
@@ -346,16 +346,16 @@ local function canonicalizeUuid(value)
     return nil
 end
 
-local function uuidCacheKey(uuid)
+function uuidCacheKey(uuid)
     return tostring(uuid or ""):gsub("[{}]", ""):lower()
 end
 
-local function isUuidOnlyName(name)
+function isUuidOnlyName(name)
     local text = trimText(name)
     return canonicalizeUuid(text) ~= nil and not text:find("%s")
 end
 
-local function getInstanceUuid(instance)
+function getInstanceUuid(instance)
     local attributeNames = {
         "UUID",
         "Uuid",
@@ -384,7 +384,7 @@ local function getInstanceUuid(instance)
     return canonicalizeUuid(instance.Name)
 end
 
-local function getAttributeText(instance)
+function getAttributeText(instance)
     local parts = {instance.Name, instance.ClassName}
     local ok, attributes = pcall(function()
         return instance:GetAttributes()
@@ -424,7 +424,7 @@ local function getAttributeText(instance)
     return table.concat(parts, " "):lower()
 end
 
-local function hasAnyKeyword(text, keywords)
+function hasAnyKeyword(text, keywords)
     for _, keyword in ipairs(keywords) do
         if text:find(keyword, 1, true) then
             return true
@@ -433,7 +433,7 @@ local function hasAnyKeyword(text, keywords)
     return false
 end
 
-local function metadataKeyMatchesAny(key, names)
+function metadataKeyMatchesAny(key, names)
     local normalized = tostring(key or ""):lower():gsub("[^%w]", "")
 
     for _, name in ipairs(names) do
@@ -448,7 +448,7 @@ local function metadataKeyMatchesAny(key, names)
     return false
 end
 
-local function getMetadataTextField(instance, names)
+function getMetadataTextField(instance, names)
     local ok, attributes = pcall(function()
         return instance:GetAttributes()
     end)
@@ -482,7 +482,7 @@ local KNOWN_EGG_NAMES = {
     "premium egg", "exotic egg", "dinosaur egg", "primal egg", "zen egg", "gourmet egg",
 }
 
-local function isLikelyEggName(name)
+function isLikelyEggName(name)
     local lower = tostring(name or ""):gsub("(%l)(%u)", "%1 %2"):lower()
     lower = lower:gsub("%s+", " ")
 
@@ -503,7 +503,7 @@ local function isLikelyEggName(name)
     return false
 end
 
-local function normalizeEggDisplayName(name)
+function normalizeEggDisplayName(name)
     local cleaned = stripStackData(tostring(name or ""):gsub("(%l)(%u)", "%1 %2"))
     if cleaned == "" then
         return cleaned
@@ -520,7 +520,7 @@ local scanReplicatedEggModelOptions
 local scanPetEggRegistryOptions
 
 do
-local function addUniqueOption(list, seen, value)
+function addUniqueOption(list, seen, value)
     local cleaned = stripStackData(value)
     if cleaned == "" then
         return
@@ -532,7 +532,7 @@ local function addUniqueOption(list, seen, value)
     end
 end
 
-local function addEggOptionFromName(names, seen, value)
+function addEggOptionFromName(names, seen, value)
     if isLikelyEggName(value) then
         addUniqueOption(names, seen, normalizeEggDisplayName(value))
     end
@@ -556,7 +556,7 @@ local PET_REGISTRY_SKIP_NAMES = {
     data = true,
 }
 
-local function addPetOptionFromRegistry(names, seen, value)
+function addPetOptionFromRegistry(names, seen, value)
     local cleaned = stripStackData(value)
     local lower = cleaned:lower()
     if cleaned == ""
@@ -570,7 +570,7 @@ local function addPetOptionFromRegistry(names, seen, value)
     addUniqueOption(names, seen, cleaned)
 end
 
-local function extractPetRegistryValue(value, names, seen, depth, keyHint)
+function extractPetRegistryValue(value, names, seen, depth, keyHint)
     if depth > 8 then
         return
     end
@@ -610,7 +610,7 @@ local function extractPetRegistryValue(value, names, seen, depth, keyHint)
     end
 end
 
-local function sortedUniqueOptions(names)
+function sortedUniqueOptions(names)
     table.sort(names)
     return names
 end
@@ -635,7 +635,7 @@ scanReplicatedEggModelOptions = function()
     return sortedUniqueOptions(names)
 end
 
-local function getPetEggRegistryRoot()
+function getPetEggRegistryRoot()
     local data = ReplicatedStorage:FindFirstChild("Data")
     local petRegistry = data and data:FindFirstChild("PetRegistry")
     return petRegistry and petRegistry:FindFirstChild("PetEggs") or nil
@@ -716,7 +716,7 @@ local KNOWN_FRUIT_NAMES = {
     "tomato", "venus fly trap", "watermelon",
 }
 
-local function isLikelyFruitName(name)
+function isLikelyFruitName(name)
     local lower = tostring(name or ""):lower()
     lower = lower:gsub("%s+fruit$", "")
     for _, fruitName in ipairs(KNOWN_FRUIT_NAMES) do
@@ -727,7 +727,7 @@ local function isLikelyFruitName(name)
     return false
 end
 
-local function classifyInventoryItem(instance)
+function classifyInventoryItem(instance)
     local rawName = tostring(instance.Name)
     local displayName = stripStackData(rawName)
     local lowerRawName = rawName:lower()
@@ -807,7 +807,7 @@ local function classifyInventoryItem(instance)
     return nil, displayName
 end
 
-local function resetInventory()
+function resetInventory()
     Inventory.Eggs = {}
     Inventory.Pets = {}
     Inventory.InventoryPets = {}
@@ -823,7 +823,7 @@ local function resetInventory()
     Inventory.ItemsByUuid = {}
 end
 
-local function addInventoryEntry(category, displayName, instance)
+function addInventoryEntry(category, displayName, instance)
     if not category or not displayName or displayName == "" then
         return
     end
@@ -869,7 +869,7 @@ local function addInventoryEntry(category, displayName, instance)
     end
 end
 
-local function scanInventoryContainer(container)
+function scanInventoryContainer(container)
     if not container then
         return
     end
@@ -883,7 +883,7 @@ local function scanInventoryContainer(container)
     end
 end
 
-local function inventoryKeyMatchesAny(key, names)
+function inventoryKeyMatchesAny(key, names)
     local normalized = tostring(key or ""):lower():gsub("[^%w]", "")
 
     for _, name in ipairs(names) do
@@ -898,7 +898,7 @@ local function inventoryKeyMatchesAny(key, names)
     return false
 end
 
-local function getTextField(instance, names)
+function getTextField(instance, names)
     if not instance then
         return nil
     end
@@ -930,7 +930,7 @@ local function getTextField(instance, names)
     return nil
 end
 
-local function getPhysicalPetDisplayName(petModel, uuid)
+function getPhysicalPetDisplayName(petModel, uuid)
     local cachedName = PetDisplayNamesByUuid[uuidCacheKey(uuid)]
     if cachedName and cachedName ~= "" then
         return cachedName
@@ -983,7 +983,7 @@ local function getPhysicalPetDisplayName(petModel, uuid)
     return "Placed Pet " .. tostring(uuid)
 end
 
-local function isLocalPlacedPet(petModel, uuid)
+function isLocalPlacedPet(petModel, uuid)
     local sawOwner = false
     local ownerNames = {
         "Owner",
@@ -1023,7 +1023,7 @@ local function isLocalPlacedPet(petModel, uuid)
     return not sawOwner or PetDisplayNamesByUuid[uuidCacheKey(uuid)] ~= nil
 end
 
-local function scanPlacedPets()
+function scanPlacedPets()
     local petsPhysical = Workspace:FindFirstChild("PetsPhysical")
     local petMover = petsPhysical and petsPhysical:FindFirstChild("PetMover")
     if not petMover then
@@ -1038,7 +1038,7 @@ local function scanPlacedPets()
     end
 end
 
-local function scanFarmFruitOptions()
+function scanFarmFruitOptions()
     local farmRoot = Workspace:FindFirstChild("Farm")
     if not farmRoot then
         return
@@ -1056,7 +1056,7 @@ local function scanFarmFruitOptions()
     end
 end
 
-local function scanFarmEggOptions()
+function scanFarmEggOptions()
     local farmRoot = Workspace:FindFirstChild("Farm")
     if not farmRoot then
         return
@@ -1091,7 +1091,7 @@ local function scanFarmEggOptions()
     end
 end
 
-local function sortedNamesFromByName(byName)
+function sortedNamesFromByName(byName)
     local names = {}
     for name in pairs(byName or {}) do
         names[#names + 1] = name
@@ -1100,7 +1100,7 @@ local function sortedNamesFromByName(byName)
     return names
 end
 
-local function mergeSortedOptions(...)
+function mergeSortedOptions(...)
     local seen = {}
     local merged = {}
     for _, options in ipairs({...}) do
@@ -1115,7 +1115,7 @@ local function mergeSortedOptions(...)
     return merged
 end
 
-local function sortInventoryOptions()
+function sortInventoryOptions()
     for _, category in ipairs({"Eggs", "Pets", "InventoryPets", "Fruits", "FarmFruits", "Seeds"}) do
         local names = {}
         local byName = Inventory[category .. "ByName"]
@@ -1139,7 +1139,7 @@ local function sortInventoryOptions()
     OPTIONS.SeedsToPlace = sortedNamesFromByName(Inventory.SeedsByName)
 end
 
-local function scanInventory()
+function scanInventory()
     resetInventory()
     scanInventoryContainer(backpack)
     scanInventoryContainer(character)
@@ -1151,7 +1151,7 @@ end
 
 scanInventory()
 
-local function addMutationOption(names, seen, value)
+function addMutationOption(names, seen, value)
     local name = stripStackData(value)
     if name ~= "" and not seen[name] then
         seen[name] = true
@@ -1159,7 +1159,7 @@ local function addMutationOption(names, seen, value)
     end
 end
 
-local function extractMutationOptions(value, names, seen)
+function extractMutationOptions(value, names, seen)
     if type(value) == "string" then
         addMutationOption(names, seen, value)
     elseif type(value) == "table" then
@@ -1173,7 +1173,7 @@ local function extractMutationOptions(value, names, seen)
     end
 end
 
-local function refreshMutationOptionsFromRemote()
+function refreshMutationOptionsFromRemote()
     local ok, result = callGameEvent("GetPetMutationNames")
     if not ok then
         return false
@@ -1291,7 +1291,7 @@ local UIRefresh = {}
 local inventorySummaryLabel
 local queueInventoryRefresh
 
-local function selectedListToText(selected, emptyText)
+function selectedListToText(selected, emptyText)
     selected = selected or {__order = {}}
 
     local names = {}
@@ -1319,23 +1319,23 @@ local function selectedListToText(selected, emptyText)
     return table.concat(names, ", ")
 end
 
-local function isSelectionMetadataKey(key)
+function isSelectionMetadataKey(key)
     return type(key) == "string" and key:sub(1, 2) == "__"
 end
 
-local function selectedTableEnsureUuidKeys(selected)
+function selectedTableEnsureUuidKeys(selected)
     selected.__uuidKeys = selected.__uuidKeys or {}
     return selected.__uuidKeys
 end
 
-local function selectedTableRememberUuid(selected, uuid)
+function selectedTableRememberUuid(selected, uuid)
     local key = uuid and uuidCacheKey(uuid) or nil
     if key and key ~= "" then
         selectedTableEnsureUuidKeys(selected)[key] = true
     end
 end
 
-local function copyArrayToSelected(options)
+function copyArrayToSelected(options)
     local selected = {__order = {}, __uuidKeys = {}}
     for _, option in ipairs(options) do
         selected.__order[#selected.__order + 1] = option
@@ -1343,7 +1343,7 @@ local function copyArrayToSelected(options)
     return selected
 end
 
-local function syncSelectedOptions(selected, options)
+function syncSelectedOptions(selected, options)
     selected.__order = {}
 
     local available = {}
@@ -1362,7 +1362,7 @@ local function syncSelectedOptions(selected, options)
     end
 end
 
-local function hasOption(options, value)
+function hasOption(options, value)
     for _, option in ipairs(options) do
         if option == value then
             return true
@@ -1371,7 +1371,7 @@ local function hasOption(options, value)
     return false
 end
 
-local function isSelectedName(selected, name)
+function isSelectedName(selected, name)
     if not selected or not name then
         return false
     end
@@ -1379,7 +1379,7 @@ local function isSelectedName(selected, name)
     return selected[name] == true
 end
 
-local function selectedPetEntries(selected)
+function selectedPetEntries(selected)
     local entries = {}
     for _, name in ipairs(selected and selected.__order or {}) do
         if isSelectedName(selected, name) then
@@ -1392,7 +1392,7 @@ local function selectedPetEntries(selected)
     return entries
 end
 
-local function entryHasUuidKey(entry, wantedKey)
+function entryHasUuidKey(entry, wantedKey)
     if not entry or not wantedKey then
         return false
     end
@@ -1406,7 +1406,7 @@ local function entryHasUuidKey(entry, wantedKey)
     return false
 end
 
-local function captureSelectedPetUuidKeys(selected)
+function captureSelectedPetUuidKeys(selected)
     local keys = {}
 
     for name, enabled in pairs(selected or {}) do
@@ -1440,7 +1440,7 @@ local function captureSelectedPetUuidKeys(selected)
     return keys
 end
 
-local function syncSelectedPetOptions(selected, options, selectedUuidKeys)
+function syncSelectedPetOptions(selected, options, selectedUuidKeys)
     syncSelectedOptions(selected, options)
 
     if not selectedUuidKeys then
@@ -1459,7 +1459,7 @@ local function syncSelectedPetOptions(selected, options, selectedUuidKeys)
     end
 end
 
-local function nextSelectedPetEntry(selected, runtimeIndexKey, skipEntry)
+function nextSelectedPetEntry(selected, runtimeIndexKey, skipEntry)
     local entries = selectedPetEntries(selected)
     if #entries == 0 then
         return nil
@@ -1479,7 +1479,7 @@ local function nextSelectedPetEntry(selected, runtimeIndexKey, skipEntry)
     return nil
 end
 
-local function selectedFruitEntries(selected)
+function selectedFruitEntries(selected)
     local entries = {}
     for _, name in ipairs(selected and selected.__order or {}) do
         if isSelectedName(selected, name) then
@@ -1492,7 +1492,7 @@ local function selectedFruitEntries(selected)
     return entries
 end
 
-local function selectedFruitCollectEntries(selected)
+function selectedFruitCollectEntries(selected)
     local entries = {}
     for _, name in ipairs(selected and selected.__order or {}) do
         if isSelectedName(selected, name) then
@@ -1505,7 +1505,7 @@ local function selectedFruitCollectEntries(selected)
     return entries
 end
 
-local function selectedSeedEntries(selected)
+function selectedSeedEntries(selected)
     local entries = {}
     for _, name in ipairs(selected and selected.__order or {}) do
         if isSelectedName(selected, name) then
@@ -1518,14 +1518,14 @@ local function selectedSeedEntries(selected)
     return entries
 end
 
-local function addUniqueInstance(list, seen, instance)
+function addUniqueInstance(list, seen, instance)
     if instance and instance.Parent and not seen[instance] then
         seen[instance] = true
         list[#list + 1] = instance
     end
 end
 
-local function getFruitCollectTargets(entry)
+function getFruitCollectTargets(entry)
     local targets = {}
     local seen = {}
 
@@ -1552,14 +1552,14 @@ local function getFruitCollectTargets(entry)
     return targets
 end
 
-local function firstInstance(entry)
+function firstInstance(entry)
     if entry and entry.Instances then
         return entry.Instances[1]
     end
     return nil
 end
 
-local function firstToolInstance(entry)
+function firstToolInstance(entry)
     for _, instance in ipairs(entry and entry.Instances or {}) do
         if instance and instance:IsA("Tool") then
             return instance
@@ -1568,7 +1568,7 @@ local function firstToolInstance(entry)
     return nil
 end
 
-local function firstUuid(entry)
+function firstUuid(entry)
     if entry and entry.UUIDs then
         return entry.UUIDs[1]
     end
@@ -1577,14 +1577,14 @@ local function firstUuid(entry)
     return instance and getInstanceUuid(instance) or nil
 end
 
-local function cachePetEntryName(entry)
+function cachePetEntryName(entry)
     local uuid = firstUuid(entry)
     if uuid and entry and entry.Name and not isUuidOnlyName(entry.Name) and not tostring(entry.Name):match("^Placed Pet ") then
         PetDisplayNamesByUuid[uuidCacheKey(uuid)] = entry.Name
     end
 end
 
-local function getPlacementCFrame(slotIndex)
+function getPlacementCFrame(slotIndex)
     local activeCharacter = localPlayer.Character
     local root = activeCharacter and activeCharacter:FindFirstChild("HumanoidRootPart")
 
@@ -1598,7 +1598,7 @@ local function getPlacementCFrame(slotIndex)
     return CFrame.new(0, 0, 0)
 end
 
-local function readInstanceValue(instance)
+function readInstanceValue(instance)
     if not instance then
         return nil
     end
@@ -1622,7 +1622,7 @@ local function readInstanceValue(instance)
     return nil
 end
 
-local function ownerMatchesLocalPlayer(ownerValue)
+function ownerMatchesLocalPlayer(ownerValue)
     if ownerValue == localPlayer then
         return true
     end
@@ -1639,7 +1639,7 @@ local function ownerMatchesLocalPlayer(ownerValue)
     return text == localPlayer.Name or tonumber(text) == localPlayer.UserId
 end
 
-local function isLocalFarm(farm)
+function isLocalFarm(farm)
     local important = farm and farm:FindFirstChild("Important")
     local data = important and important:FindFirstChild("Data")
     local owner = data and data:FindFirstChild("Owner")
@@ -1655,7 +1655,7 @@ local function isLocalFarm(farm)
     return ok and ownerMatchesLocalPlayer(ownerAttribute)
 end
 
-local function getLocalFarm()
+function getLocalFarm()
     local farmRoot = Workspace:FindFirstChild("Farm")
     if not farmRoot then
         return nil
@@ -1670,7 +1670,7 @@ local function getLocalFarm()
     return nil
 end
 
-local function firstBasePart(instance)
+function firstBasePart(instance)
     if not instance then
         return nil
     end
@@ -1686,7 +1686,7 @@ local function firstBasePart(instance)
     return instance:FindFirstChildWhichIsA("BasePart", true)
 end
 
-local function getEggPlantLocation()
+function getEggPlantLocation()
     local farm = getLocalFarm()
     local important = farm and farm:FindFirstChild("Important")
     local plantLocations = important and important:FindFirstChild("Plant_Locations")
@@ -1698,7 +1698,7 @@ local function getEggPlantLocation()
     return children[2] or children[1]
 end
 
-local function pointInPart(part, mode, slotIndex)
+function pointInPart(part, mode, slotIndex)
     if not part then
         return nil
     end
@@ -1745,7 +1745,7 @@ local function pointInPart(part, mode, slotIndex)
     )).Position
 end
 
-local function getEggPlacementCFrame(slotIndex)
+function getEggPlacementCFrame(slotIndex)
     local location = getEggPlantLocation()
     local part = firstBasePart(location)
     local position = pointInPart(part, Config.Hatch.EggPlacementMode, slotIndex)
@@ -1757,7 +1757,7 @@ local function getEggPlacementCFrame(slotIndex)
     return getPlacementCFrame(slotIndex)
 end
 
-local function getFarmPhysicalContainer(name)
+function getFarmPhysicalContainer(name)
     local farmRoot = Workspace:FindFirstChild("Farm")
     if not farmRoot then
         return nil
@@ -1782,7 +1782,7 @@ local function getFarmPhysicalContainer(name)
     return nil
 end
 
-local function getPhysicalEggName(instance)
+function getPhysicalEggName(instance)
     local name = stripStackData(instance and instance.Name or "")
     local ok, attributes = pcall(function()
         return instance:GetAttributes()
@@ -1800,7 +1800,7 @@ local function getPhysicalEggName(instance)
     return normalizeEggDisplayName(name)
 end
 
-local function findHatchableEggObject()
+function findHatchableEggObject()
     local objects = getFarmPhysicalContainer("Objects_Physical")
     if not objects then
         return nil
@@ -1828,7 +1828,7 @@ local function findHatchableEggObject()
     return objects:GetChildren()[1]
 end
 
-local function equipToolInstance(instance)
+function equipToolInstance(instance)
     if not instance or not instance:IsA("Tool") then
         return false
     end
@@ -1843,7 +1843,7 @@ local function equipToolInstance(instance)
     return false
 end
 
-local function isCooldownKey(key)
+function isCooldownKey(key)
     local normalized = tostring(key or ""):lower():gsub("[^%w]", "")
     return normalized:find("cooldown", 1, true)
         or normalized:find("remaining", 1, true)
@@ -1851,7 +1851,7 @@ local function isCooldownKey(key)
         or normalized:find("duration", 1, true)
 end
 
-local function parseCooldownValue(value)
+function parseCooldownValue(value)
     if type(value) == "number" then
         return value
     end
@@ -1879,7 +1879,7 @@ local function parseCooldownValue(value)
     return firstNumber
 end
 
-local function getPetCooldownSeconds(uuid)
+function getPetCooldownSeconds(uuid)
     if not uuid then
         return nil
     end
@@ -1897,7 +1897,7 @@ local function getPetCooldownSeconds(uuid)
     return math.max(0, cooldown)
 end
 
-local function waitForPetAbilityFinished(uuid, petInstance)
+function waitForPetAbilityFinished(uuid, petInstance)
     local env = (type(getgenv) == "function" and getgenv()) or _G
     local checker = type(env) == "table" and env.GAG_IsPetAbilityFinished or nil
     local hasChecker = type(checker) == "function"
@@ -1931,11 +1931,11 @@ local function waitForPetAbilityFinished(uuid, petInstance)
     return false
 end
 
-local function normalizeLookupKey(value)
+function normalizeLookupKey(value)
     return tostring(value or ""):lower():gsub("[^%w]", "")
 end
 
-local function keyMatchesAny(key, names)
+function keyMatchesAny(key, names)
     local normalized = normalizeLookupKey(key)
     for _, name in ipairs(names) do
         local wanted = normalizeLookupKey(name)
@@ -1946,7 +1946,7 @@ local function keyMatchesAny(key, names)
     return false
 end
 
-local function keyHasAny(key, names)
+function keyHasAny(key, names)
     local normalized = normalizeLookupKey(key)
     for _, name in ipairs(names) do
         if normalized:find(normalizeLookupKey(name), 1, true) then
@@ -1956,7 +1956,7 @@ local function keyHasAny(key, names)
     return false
 end
 
-local function readNumericField(root, names, excludedNames)
+function readNumericField(root, names, excludedNames)
     if not root then
         return nil
     end
@@ -2012,7 +2012,7 @@ local function readNumericField(root, names, excludedNames)
     return nil
 end
 
-local function readBooleanField(root, names)
+function readBooleanField(root, names)
     if not root then
         return nil
     end
@@ -2058,7 +2058,7 @@ local function readBooleanField(root, names)
     return nil
 end
 
-local function findPhysicalPetByUuid(uuid)
+function findPhysicalPetByUuid(uuid)
     if not uuid then
         return nil
     end
@@ -2075,7 +2075,7 @@ local function findPhysicalPetByUuid(uuid)
         or petMover:FindFirstChild(compactUuid)
 end
 
-local function getPetHungerPercent(entry)
+function getPetHungerPercent(entry)
     local uuid = firstUuid(entry)
     local roots = {
         firstInstance(entry),
@@ -2149,13 +2149,27 @@ local WINDOW_HEIGHT = 650
 local TOPBAR_HEIGHT = 52
 local NAV_WIDTH = 194
 
-local screenGui = Instance.new("ScreenGui")
+local screenGui
+local window
+local topbar
+local statusLabel
+local minimizeBtn
+local closeBtn
+local body
+local nav
+local content
+local pages = {}
+local navButtons = {}
+local logList
+
+function createWindowShell()
+screenGui = Instance.new("ScreenGui")
 screenGui.Name = "GAGMainUI"
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = getGuiParent()
 
-local window = Instance.new("Frame")
+window = Instance.new("Frame")
 window.Name = "Window"
 window.AnchorPoint = Vector2.new(0.5, 0.5)
 window.Position = UDim2.fromScale(0.5, 0.5)
@@ -2213,7 +2227,7 @@ title.TextSize = 18
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.Parent = topbar
 
-local statusLabel = Instance.new("TextLabel")
+statusLabel = Instance.new("TextLabel")
 statusLabel.Name = "Status"
 statusLabel.BackgroundColor3 = Theme.PanelAlt
 statusLabel.BackgroundTransparency = 0
@@ -2236,7 +2250,7 @@ statusStroke.Color = Color3.fromRGB(54, 65, 82)
 statusStroke.Thickness = 1
 statusStroke.Parent = statusLabel
 
-local minimizeBtn = Instance.new("TextButton")
+minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Name = "Minimize"
 minimizeBtn.AnchorPoint = Vector2.new(1, 0.5)
 minimizeBtn.Position = UDim2.new(1, -48, 0.5, 0)
@@ -2253,7 +2267,7 @@ local minimizeCorner = Instance.new("UICorner")
 minimizeCorner.CornerRadius = UDim.new(0, 6)
 minimizeCorner.Parent = minimizeBtn
 
-local closeBtn = Instance.new("TextButton")
+closeBtn = Instance.new("TextButton")
 closeBtn.Name = "Close"
 closeBtn.AnchorPoint = Vector2.new(1, 0.5)
 closeBtn.Position = UDim2.new(1, -12, 0.5, 0)
@@ -2270,14 +2284,14 @@ local closeCorner = Instance.new("UICorner")
 closeCorner.CornerRadius = UDim.new(0, 6)
 closeCorner.Parent = closeBtn
 
-local body = Instance.new("Frame")
+body = Instance.new("Frame")
 body.Name = "Body"
 body.BackgroundTransparency = 1
 body.Position = UDim2.fromOffset(0, TOPBAR_HEIGHT)
 body.Size = UDim2.new(1, 0, 1, -TOPBAR_HEIGHT)
 body.Parent = window
 
-local nav = Instance.new("Frame")
+nav = Instance.new("Frame")
 nav.Name = "Nav"
 nav.BackgroundColor3 = Theme.Nav
 nav.BorderSizePixel = 0
@@ -2295,18 +2309,17 @@ navLayout.Padding = UDim.new(0, 9)
 navLayout.SortOrder = Enum.SortOrder.LayoutOrder
 navLayout.Parent = nav
 
-local content = Instance.new("Frame")
+content = Instance.new("Frame")
 content.Name = "Content"
 content.BackgroundTransparency = 1
 content.Position = UDim2.fromOffset(NAV_WIDTH, 0)
 content.Size = UDim2.new(1, -NAV_WIDTH, 1, 0)
 content.Parent = body
+end
 
-local pages = {}
-local navButtons = {}
-local logList
+createWindowShell()
 
-local function log(message)
+function log(message)
     local line = os.date("%H:%M:%S") .. "  " .. tostring(message)
     Runtime.Logs[#Runtime.Logs + 1] = line
     if #Runtime.Logs > 120 then
@@ -2320,11 +2333,11 @@ local function log(message)
     print("[GAG Main] " .. tostring(message))
 end
 
-local function setStatus(text)
+function setStatus(text)
     statusLabel.Text = tostring(text)
 end
 
-local function sendWebhookPayload(payload)
+function sendWebhookPayload(payload)
     local url = trimText(Config.Misc.WebhookUrl)
     if url == "" then
         return false
@@ -2356,7 +2369,7 @@ local function sendWebhookPayload(payload)
     return ok
 end
 
-local function sendKgWebhook(entry, oldKg, newKg)
+function sendKgWebhook(entry, oldKg, newKg)
     if not Config.Misc.WebhookKgLogs then
         return
     end
@@ -2389,7 +2402,7 @@ local function sendKgWebhook(entry, oldKg, newKg)
     })
 end
 
-local function sendHatchWebhook(eggName, petEntry)
+function sendHatchWebhook(eggName, petEntry)
     if not Config.Misc.WebhookHatchLogs then
         return
     end
@@ -2414,14 +2427,14 @@ local function sendHatchWebhook(eggName, petEntry)
     })
 end
 
-local function makeCorner(parent, radius)
+function makeCorner(parent, radius)
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, radius or 6)
     corner.Parent = parent
     return corner
 end
 
-local function makeStroke(parent, color, thickness)
+function makeStroke(parent, color, thickness)
     local stroke = Instance.new("UIStroke")
     stroke.Color = color or Theme.Stroke
     stroke.Thickness = thickness or 1
@@ -2429,7 +2442,7 @@ local function makeStroke(parent, color, thickness)
     return stroke
 end
 
-local function makePadding(parent, amount)
+function makePadding(parent, amount)
     local padding = Instance.new("UIPadding")
     padding.PaddingTop = UDim.new(0, amount)
     padding.PaddingBottom = UDim.new(0, amount)
@@ -2439,7 +2452,7 @@ local function makePadding(parent, amount)
     return padding
 end
 
-local function createPage(name)
+function createPage(name)
     local page = Instance.new("ScrollingFrame")
     page.Name = name .. "Page"
     page.BackgroundTransparency = 1
@@ -2469,7 +2482,7 @@ local function createPage(name)
     return page
 end
 
-local function switchTab(name)
+function switchTab(name)
     Runtime.ActiveTab = name
 
     for pageName, page in pairs(pages) do
@@ -2483,7 +2496,7 @@ local function switchTab(name)
     end
 end
 
-local function createNavButton(name, label, order)
+function createNavButton(name, label, order)
     local button = Instance.new("TextButton")
     button.Name = name .. "Tab"
     button.LayoutOrder = order
@@ -2511,7 +2524,7 @@ local function createNavButton(name, label, order)
     return button
 end
 
-local function createSection(parent, titleText)
+function createSection(parent, titleText)
     local section = Instance.new("Frame")
     section.Name = titleText:gsub("%s+", "") .. "Section"
     section.BackgroundColor3 = Theme.Panel
@@ -2543,7 +2556,7 @@ local function createSection(parent, titleText)
     return section
 end
 
-local function createRow(parent, height)
+function createRow(parent, height)
     local row = Instance.new("Frame")
     row.BackgroundColor3 = Theme.PanelAlt
     row.BorderSizePixel = 0
@@ -2554,7 +2567,7 @@ local function createRow(parent, height)
     return row
 end
 
-local function createToggle(parent, text, default, callback)
+function createToggle(parent, text, default, callback)
     local row = createRow(parent, 48)
 
     local label = Instance.new("TextLabel")
@@ -2609,7 +2622,7 @@ local function createToggle(parent, text, default, callback)
     return setEnabled
 end
 
-local function createButton(parent, text, callback)
+function createButton(parent, text, callback)
     local button = Instance.new("TextButton")
     button.BackgroundColor3 = Theme.AccentAlt
     button.BorderSizePixel = 0
@@ -2631,7 +2644,7 @@ local function createButton(parent, text, callback)
     return button
 end
 
-local function createTextInput(parent, labelText, placeholder, default, callback)
+function createTextInput(parent, labelText, placeholder, default, callback)
     local row = createRow(parent, 48)
 
     local label = Instance.new("TextLabel")
@@ -2674,11 +2687,11 @@ local function createTextInput(parent, labelText, placeholder, default, callback
     return box
 end
 
-local function optionListHeight(optionCount)
+function optionListHeight(optionCount)
     return math.min(math.max(optionCount or 1, 1) * 34 + 10, 240)
 end
 
-local function createDropdown(parent, labelText, options, default, callback)
+function createDropdown(parent, labelText, options, default, callback)
     local currentOptions = options or {}
     local currentValue = default or currentOptions[1]
 
@@ -2834,7 +2847,7 @@ local function createDropdown(parent, labelText, options, default, callback)
     end
 end
 
-local function createMultiSelect(parent, labelText, options, selected, callback)
+function createMultiSelect(parent, labelText, options, selected, callback)
     local currentOptions = options or {}
     selected = selected or copyArrayToSelected(currentOptions)
     syncSelectedOptions(selected, currentOptions)
@@ -3009,7 +3022,7 @@ local function createMultiSelect(parent, labelText, options, selected, callback)
     end
 end
 
-local function parsePriority(text)
+function parsePriority(text)
     local priority = {}
     for raw in string.gmatch(text or "", "([^,]+)") do
         local value = raw:gsub("^%s+", ""):gsub("%s+$", "")
@@ -3020,7 +3033,7 @@ local function parsePriority(text)
     return priority
 end
 
-local function selectedToPriority(selected)
+function selectedToPriority(selected)
     local priority = {}
     for _, name in ipairs(selected.__order or {}) do
         if selected[name] then
@@ -3030,7 +3043,7 @@ local function selectedToPriority(selected)
     return priority
 end
 
-local function selectedEggRuleOptions()
+function selectedEggRuleOptions()
     local selectedEggs = selectedToPriority(Config.Hatch.SelectedEggs)
     if #selectedEggs > 0 then
         return selectedEggs
@@ -3039,7 +3052,7 @@ local function selectedEggRuleOptions()
     return OPTIONS.Eggs
 end
 
-local function eggPetOptions(eggName)
+function eggPetOptions(eggName)
     if not eggName or eggName == "" then
         return {}
     end
@@ -3047,7 +3060,7 @@ local function eggPetOptions(eggName)
     return OPTIONS.EggPetsByEgg[eggName] or {}
 end
 
-local function normalizeEggPriorityToSelected()
+function normalizeEggPriorityToSelected()
     local selectedEggs = selectedEggRuleOptions()
     local filteredPriority = {}
 
@@ -3065,7 +3078,7 @@ local function normalizeEggPriorityToSelected()
     return selectedEggs
 end
 
-local function refreshInventorySummary()
+function refreshInventorySummary()
     if not inventorySummaryLabel then
         return
     end
@@ -3078,7 +3091,7 @@ local function refreshInventorySummary()
     )
 end
 
-local function refreshInventoryOptions(reason)
+function refreshInventoryOptions(reason)
     local selectedPetUuidKeys = {
         LevelPets = captureSelectedPetUuidKeys(Config.Main.LevelPets),
         FeedPets = captureSelectedPetUuidKeys(Config.Main.FeedPets),
@@ -3249,7 +3262,7 @@ function Actions.AutoFeedPet(enabled)
     log("Auto Feed Pet " .. (enabled and "enabled" or "disabled") .. " | hunger < " .. tostring(Config.Main.HungerThreshold) .. "%")
 end
 
-local function feedPetEntry(entry)
+function feedPetEntry(entry)
     local uuid = firstUuid(entry)
     local instance = firstInstance(entry)
 
@@ -3306,7 +3319,7 @@ function Actions.FeedHungryPetsOnce()
     return fedCount
 end
 
-local function getPetLevel(entry)
+function getPetLevel(entry)
     for _, instance in ipairs(entry and entry.Instances or {}) do
         local text = tostring(instance.Name)
         local levelText = text:match("%[[Aa]ge%s+(%d+)%]")
@@ -3356,7 +3369,7 @@ function Actions.LevelSelectedPetsOnce()
     return firedCount
 end
 
-local function getPetKg(entry)
+function getPetKg(entry)
     for _, instance in ipairs(entry and entry.Instances or {}) do
         local kgText = tostring(instance.Name):match("%[(%d+%.?%d*)%s*[Kk][Gg]%]")
             or tostring(instance.Name):match("(%d+%.?%d*)%s*[Kk][Gg]")
@@ -3373,12 +3386,12 @@ local function getPetKg(entry)
     return nil
 end
 
-local function entryUuidKey(entry)
+function entryUuidKey(entry)
     local uuid = firstUuid(entry)
     return uuid and uuidCacheKey(uuid) or nil
 end
 
-local function findPetEntryByUuidKey(key)
+function findPetEntryByUuidKey(key)
     if not key then
         return nil
     end
@@ -3392,7 +3405,7 @@ local function findPetEntryByUuidKey(key)
     return nil
 end
 
-local function captureInventoryPetUuidKeys()
+function captureInventoryPetUuidKeys()
     local keys = {}
 
     for _, entry in ipairs(Inventory.Pets or {}) do
@@ -3404,7 +3417,7 @@ local function captureInventoryPetUuidKeys()
     return keys
 end
 
-local function findNewPetEntries(previousUuidKeys)
+function findNewPetEntries(previousUuidKeys)
     local entries = {}
     local seen = {}
 
@@ -3422,7 +3435,7 @@ local function findNewPetEntries(previousUuidKeys)
     return entries
 end
 
-local function isKgBoostTargetDone(entry)
+function isKgBoostTargetDone(entry)
     local key = entryUuidKey(entry)
     if key and Runtime.KgBoostCompleted[key] then
         return true
@@ -3437,7 +3450,7 @@ local function isKgBoostTargetDone(entry)
     return false
 end
 
-local function equipPetEntry(entry, slotIndex)
+function equipPetEntry(entry, slotIndex)
     local uuid = firstUuid(entry)
     if not uuid then
         return false
@@ -3447,7 +3460,7 @@ local function equipPetEntry(entry, slotIndex)
     return fireGameEvent("PetsService", "EquipPet", uuid, getPlacementCFrame(slotIndex))
 end
 
-local function unequipPetEntry(entry)
+function unequipPetEntry(entry)
     local uuid = firstUuid(entry)
     if not uuid then
         return false
@@ -3457,7 +3470,7 @@ local function unequipPetEntry(entry)
     return fireGameEvent("PetsService", "UnequipPet", uuid)
 end
 
-local function firePetKgBoost(entry)
+function firePetKgBoost(entry)
     local uuid = firstUuid(entry)
     if not uuid then
         return false
@@ -3469,7 +3482,7 @@ local function firePetKgBoost(entry)
         or tryFireGameEvent("PetBoostService", "KGBoost", uuid)
 end
 
-local function roundKg(value)
+function roundKg(value)
     value = tonumber(value)
     if not value then
         return nil
@@ -3478,7 +3491,7 @@ local function roundKg(value)
     return math.floor((value * 10) + 0.5) / 10
 end
 
-local function getTrackedPetKg(entry)
+function getTrackedPetKg(entry)
     local key = entryUuidKey(entry)
     local kg = getPetKg(entry)
     local trackedKg = key and Runtime.KgLastLoggedByUuid[key] or nil
@@ -3492,7 +3505,7 @@ local function getTrackedPetKg(entry)
     return trackedKg
 end
 
-local function recordKgBoostProgress(entry, beforeKg, afterKg)
+function recordKgBoostProgress(entry, beforeKg, afterKg)
     local key = entryUuidKey(entry)
     if not key then
         return false
@@ -3512,7 +3525,7 @@ local function recordKgBoostProgress(entry, beforeKg, afterKg)
     return newKg >= KG_BOOST_TARGET_KG
 end
 
-local function getKgBoostTargets(limit, blockedUuidKeys)
+function getKgBoostTargets(limit, blockedUuidKeys)
     local entries = selectedPetEntries(Config.Main.KgTargetPets)
     local targets = {}
     if #entries == 0 then
@@ -3711,7 +3724,7 @@ function Actions.FavoriteSelectedPetsOnce()
     return changedCount
 end
 
-local function getSelectedNames(selected)
+function getSelectedNames(selected)
     local names = {}
     for _, name in ipairs(selected and selected.__order or {}) do
         if isSelectedName(selected, name) then
@@ -3782,7 +3795,7 @@ local DEFAULT_SEED_BUY_NAMES = {
     "Beanstalk",
 }
 
-local function fireBuyVariants(remoteName, itemName, index)
+function fireBuyVariants(remoteName, itemName, index)
     local argSets = {}
 
     if itemName and itemName ~= "" then
@@ -3853,7 +3866,7 @@ function Actions.AutoBuySelectedShopsOnce()
     return firedCount
 end
 
-local function plantSeedAt(seedName, cframe)
+function plantSeedAt(seedName, cframe)
     local position = cframe.Position
     return tryFireGameEventAny("Plant", {
         {position, seedName},
@@ -3905,7 +3918,7 @@ function Actions.AutoKgBoost(enabled)
     log("Auto KG Boost " .. (enabled and "enabled" or "disabled") .. " | max equipped " .. tostring(MAX_PETS_EQUIPPED) .. " | target " .. tostring(KG_BOOST_TARGET_KG) .. " KG")
 end
 
-local function installHatchActions()
+function installHatchActions()
     local BUFF_KEYWORDS = {
         "egg",
         "hatch",
@@ -4512,11 +4525,11 @@ function Actions.AutoMutation(enabled)
     log("Auto Mutation " .. (enabled and "enabled" or "disabled"))
 end
 
-local function isMutationSelected(name)
+function isMutationSelected(name)
     return Config.Mutation.SelectedMutations[name] == true
 end
 
-local function hasSelectedPetGivenMutation()
+function hasSelectedPetGivenMutation()
     for mutationName in pairs(PET_GIVEN_MUTATIONS) do
         if isMutationSelected(mutationName) then
             return true
@@ -5294,7 +5307,7 @@ function buildLogsPage()
 end
 buildLogsPage()
 
-local function startRuntimeBindings()
+function startRuntimeBindings()
 local dragging = false
 local dragStart
 local startPosition
@@ -5361,7 +5374,7 @@ queueInventoryRefresh = function(reason)
     end)
 end
 
-local function bindCharacterInventory(newCharacter)
+function bindCharacterInventory(newCharacter)
     character = newCharacter
     if not character then
         return
@@ -5392,14 +5405,14 @@ end
 
 localPlayer.CharacterAdded:Connect(bindCharacterInventory)
 
-local function shouldRefreshForFarmNode(instance)
+function shouldRefreshForFarmNode(instance)
     return instance.Name == "Plants_Physical"
         or instance.Name == "Objects_Physical"
         or (instance.Parent and instance.Parent.Name == "Plants_Physical")
         or (instance.Parent and instance.Parent.Name == "Objects_Physical")
 end
 
-local function bindFarmInventoryRefresh(farmRoot)
+function bindFarmInventoryRefresh(farmRoot)
     if not farmRoot then
         return
     end
@@ -5428,7 +5441,7 @@ end)
 local boundPetMovers = {}
 local boundPetsPhysicalRoots = {}
 
-local function bindPetMoverInventoryRefresh(petMover)
+function bindPetMoverInventoryRefresh(petMover)
     if not petMover or boundPetMovers[petMover] then
         return
     end
@@ -5444,7 +5457,7 @@ local function bindPetMoverInventoryRefresh(petMover)
     end)
 end
 
-local function bindPlacedPetInventoryRefresh(petsPhysical)
+function bindPlacedPetInventoryRefresh(petsPhysical)
     if not petsPhysical then
         return
     end
