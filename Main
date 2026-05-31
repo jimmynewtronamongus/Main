@@ -4709,7 +4709,7 @@ function installHatchActions()
             return remaining <= 0
         end
 
-        return true
+        return false
     end
 
     local function getEggRemainingSeconds(eggObject)
@@ -4758,6 +4758,8 @@ function installHatchActions()
 
         return ("%dm %02ds"):format(minutes, secs)
     end
+
+    Actions.IsEggReadyToHatch = isEggReadyToHatch
 
     local function getEggAdornee(eggObject)
         if eggObject:IsA("BasePart") then
@@ -5355,6 +5357,11 @@ function Actions.HatchOnce()
     local eggObject = findHatchableEggObject()
     if not eggObject then
         log("Auto Hatch skipped: no physical egg found in Farm > Objects_Physical.")
+        return false
+    end
+
+    if Actions.IsEggReadyToHatch and not Actions.IsEggReadyToHatch(eggObject) then
+        log("Auto Hatch skipped: selected egg is not ready yet.")
         return false
     end
 
