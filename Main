@@ -904,6 +904,15 @@ function resetInventory()
     Inventory.ItemsByUuid = {}
 end
 
+function isPlacedPetInstance(instance)
+    if not instance then
+        return false
+    end
+
+    local petsPhysical = Workspace:FindFirstChild("PetsPhysical")
+    return petsPhysical ~= nil and instance:IsDescendantOf(petsPhysical)
+end
+
 function addInventoryEntry(category, displayName, instance)
     if not category or not displayName or displayName == "" then
         return
@@ -935,6 +944,9 @@ function addInventoryEntry(category, displayName, instance)
     end
 
     entry.Instances[#entry.Instances + 1] = instance
+    if category == "Pets" and isPlacedPetInstance(instance) then
+        entry.Placed = true
+    end
 
     if uuid then
         entry.UUIDs[#entry.UUIDs + 1] = uuid
@@ -1278,6 +1290,17 @@ function sortedNamesFromByName(byName)
     return names
 end
 
+function sortedPlacedPetNames()
+    local names = {}
+    for _, entry in ipairs(Inventory.Pets or {}) do
+        if entry.Placed then
+            names[#names + 1] = entry.Name
+        end
+    end
+    table.sort(names)
+    return names
+end
+
 function mergeSortedOptions(...)
     local seen = {}
     local merged = {}
@@ -1463,6 +1486,9 @@ local Runtime = {
     FavoriteAppliedByUuid = {},
     EggEspBillboards = {},
     EggPredictionCache = {},
+    TextureBackups = {},
+    TextureConnections = {},
+    FruitCollectLastEmptyLog = 0,
 }
 
 local Actions = {}
@@ -2459,6 +2485,7 @@ local content
 local pages = {}
 local navButtons = {}
 local logList
+local logScrollFrame
 
 function createWindowShell()
 screenGui = Instance.new("ScreenGui")
@@ -2642,6 +2669,14 @@ function log(message)
 
     if logList then
         logList.Text = table.concat(Runtime.Logs, "\n")
+        task.defer(function()
+            if logScrollFrame and logScrollFrame.Parent and logList and logList.Parent then
+                local height = math.max(360, logList.TextBounds.Y + 28)
+                logList.Size = UDim2.new(1, -18, 0, height)
+                logScrollFrame.CanvasSize = UDim2.fromOffset(0, height)
+                logScrollFrame.CanvasPosition = Vector2.new(0, math.max(0, height - logScrollFrame.AbsoluteWindowSize.Y))
+            end
+        end)
     end
 
     print("[GAG Main] " .. tostring(message))
@@ -3488,9 +3523,10 @@ function refreshInventoryOptions(reason)
     }
 
     scanInventory()
+    local placedPetOptions = sortedPlacedPetNames()
 
     syncSelectedPetOptions(Config.Main.LevelPets, OPTIONS.Pets, selectedPetUuidKeys.LevelPets)
-    syncSelectedPetOptions(Config.Main.FeedPets, OPTIONS.Pets, selectedPetUuidKeys.FeedPets)
+    syncSelectedPetOptions(Config.Main.FeedPets, placedPetOptions, selectedPetUuidKeys.FeedPets)
     syncSelectedPetOptions(Config.Main.KgBoosterPets, OPTIONS.Pets, selectedPetUuidKeys.KgBoosterPets)
     syncSelectedPetOptions(Config.Main.KgTargetPets, OPTIONS.Pets, selectedPetUuidKeys.KgTargetPets)
     syncSelectedPetOptions(Config.Main.PickAndPlacePets, OPTIONS.Pets, selectedPetUuidKeys.PickAndPlacePets)
@@ -3579,7 +3615,7 @@ function refreshInventoryOptions(reason)
     end
 
     if UIRefresh.FeedPets then
-        UIRefresh.FeedPets(Config.Main.FeedPets, OPTIONS.Pets)
+        UIRefresh.FeedPets(Config.Main.FeedPets, placedPetOptions)
     end
 
     if UIRefresh.KgBoosterPets then
@@ -4016,23 +4052,39 @@ function Actions.KgBoostBatchOnce()
     return true
 end
 
-function Actions.CollectSelectedFruitOnce()
+function Actions.CollectSelectedFruitOnce(maxTargets)
     local targets = {}
     local seen = {}
+
+    maxTargets = math.max(1, tonumber(maxTargets) or 12)
 
     for _, entry in ipairs(selectedFruitCollectEntries(Config.Misc.FruitsToCollect)) do
         for _, target in ipairs(getFruitCollectTargets(entry)) do
             addUniqueInstance(targets, seen, target)
+            if #targets >= maxTargets then
+                break
+            end
+        end
+        if #targets >= maxTargets then
+            break
         end
     end
 
     if #targets == 0 then
-        log("Fruit pickup skipped: no selected farm fruit found.")
+        local now = os.clock()
+        if now - Runtime.FruitCollectLastEmptyLog > 8 then
+            Runtime.FruitCollectLastEmptyLog = now
+            log("Fruit pickup skipped: no selected farm fruit found.")
+        end
         return 0
     end
 
     local firedCount = 0
     for _, target in ipairs(targets) do
+        if Config.Misc.AutoPickupFruit == false then
+            break
+        end
+
         local firedHarvest = tryFireGameEventAny("HarvestRemote", {
             {target},
             {{target}},
@@ -4047,7 +4099,9 @@ function Actions.CollectSelectedFruitOnce()
         end
     end
 
-    log(("Fruit pickup fired for %d target(s)."):format(firedCount))
+    if firedCount > 0 then
+        log(("Fruit pickup fired for %d target(s)."):format(firedCount))
+    end
     return firedCount
 end
 
@@ -4090,12 +4144,52 @@ function Actions.FavoriteSelectedPetsOnce()
 
         if current ~= desired and (current ~= nil or not Runtime.FavoriteAppliedByUuid[appliedKey]) then
             cachePetEntryName(entry)
-            local payload = instance or uuid
-            if payload and tryFireGameEvent("FavoriteItem", payload, desired) then
-                changedCount = changedCount + 1
-                Runtime.FavoriteAppliedByUuid[appliedKey] = true
-                log((desired and "Favorited " or "Unfavorited ") .. tostring(entry.Name))
-            elseif uuid and tryFireGameEvent("FavoriteItem", uuid, desired) then
+            local favoriteArgs = {}
+            if uuid then
+                favoriteArgs[#favoriteArgs + 1] = {uuid, desired}
+                favoriteArgs[#favoriteArgs + 1] = {uuid}
+                favoriteArgs[#favoriteArgs + 1] = {desired and "Favorite" or "Unfavorite", uuid}
+            end
+            if instance then
+                favoriteArgs[#favoriteArgs + 1] = {instance, desired}
+                favoriteArgs[#favoriteArgs + 1] = {instance}
+                favoriteArgs[#favoriteArgs + 1] = {desired and "Favorite" or "Unfavorite", instance}
+            end
+
+            local fired = false
+            if #favoriteArgs > 0 then
+                for _, remoteName in ipairs({"FavoriteItem", "FavoritePet", "ToggleFavorite", "SetFavorite"}) do
+                    if tryFireGameEventAny(remoteName, favoriteArgs) then
+                        fired = true
+                        break
+                    end
+                end
+            end
+
+            if not fired then
+                local directArgs = {}
+                if uuid then
+                    directArgs[#directArgs + 1] = {uuid}
+                    directArgs[#directArgs + 1] = {uuid, desired}
+                end
+                if instance then
+                    directArgs[#directArgs + 1] = {instance}
+                    directArgs[#directArgs + 1] = {instance, desired}
+                end
+                if #directArgs > 0 then
+                    local directRemoteNames = desired
+                        and {"FavoriteItem", "FavoritePet"}
+                        or {"UnfavoriteItem", "UnfavoritePet"}
+                    for _, remoteName in ipairs(directRemoteNames) do
+                        if tryFireGameEventAny(remoteName, directArgs) then
+                            fired = true
+                            break
+                        end
+                    end
+                end
+            end
+
+            if fired then
                 changedCount = changedCount + 1
                 Runtime.FavoriteAppliedByUuid[appliedKey] = true
                 log((desired and "Favorited " or "Unfavorited ") .. tostring(entry.Name))
@@ -5391,15 +5485,94 @@ function Actions.PickAndPlaceOnce()
     return true
 end
 
+local function removeTexturesFromInstance(instance)
+    if Runtime.TextureBackups[instance] then
+        return
+    end
+
+    if instance:IsA("Decal") or instance:IsA("Texture") then
+        Runtime.TextureBackups[instance] = {
+            Type = "Texture",
+            Transparency = instance.Transparency,
+        }
+        instance.Transparency = 1
+    elseif instance:IsA("BasePart") then
+        Runtime.TextureBackups[instance] = {
+            Type = "Part",
+            Material = instance.Material,
+            Reflectance = instance.Reflectance,
+        }
+        instance.Material = Enum.Material.SmoothPlastic
+        instance.Reflectance = 0
+    elseif instance:IsA("Terrain") then
+        local ok, decoration = pcall(function()
+            return instance.Decoration
+        end)
+        if ok then
+            Runtime.TextureBackups[instance] = {
+                Type = "Terrain",
+                Decoration = decoration,
+            }
+            pcall(function()
+                instance.Decoration = false
+            end)
+        end
+    end
+end
+
+local function restoreRemovedTextures()
+    for instance, backup in pairs(Runtime.TextureBackups) do
+        if instance and instance.Parent then
+            pcall(function()
+                if backup.Type == "Texture" then
+                    instance.Transparency = backup.Transparency
+                elseif backup.Type == "Part" then
+                    instance.Material = backup.Material
+                    instance.Reflectance = backup.Reflectance
+                elseif backup.Type == "Terrain" then
+                    instance.Decoration = backup.Decoration
+                end
+            end)
+        end
+    end
+    Runtime.TextureBackups = {}
+end
+
+function Actions.SetTexturesRemoved(enabled)
+    for _, connection in ipairs(Runtime.TextureConnections) do
+        connection:Disconnect()
+    end
+    Runtime.TextureConnections = {}
+
+    if not enabled then
+        restoreRemovedTextures()
+        return
+    end
+
+    for _, instance in ipairs(Workspace:GetDescendants()) do
+        pcall(removeTexturesFromInstance, instance)
+    end
+
+    Runtime.TextureConnections[#Runtime.TextureConnections + 1] = Workspace.DescendantAdded:Connect(function(instance)
+        if Config.Misc.RemoveTextures then
+            task.defer(function()
+                pcall(removeTexturesFromInstance, instance)
+            end)
+        end
+    end)
+end
+
 function Actions.MiscToggle(name, enabled)
     log(name .. " " .. (enabled and "enabled" or "disabled"))
 
     if name == "Anti Lag" then
         fireGameEvent("SettingsService", "SetSetting", "PerformanceMode", enabled)
+    elseif name == "Remove Textures" then
+        Actions.SetTexturesRemoved(enabled)
     elseif name == "Auto Un/Favorite" and enabled then
         Actions.FavoriteSelectedPetsOnce()
-    elseif name == "Auto Pick Up Fruit" and enabled then
-        Actions.CollectSelectedFruitOnce()
+    elseif name == "Auto Pick Up Fruit" then
+        Runtime.FruitCollectLastEmptyLog = 0
     elseif name == "Auto Sell Fruit" and enabled then
         Actions.SellSelectedFruitOnce()
     elseif name == "Auto Buy" and enabled then
@@ -5625,12 +5798,12 @@ function buildHatchPage()
         Actions.AutoHatch(enabled)
     end)
 
-    UIRefresh.EggsToHatch = createMultiSelect(hatchSection, "Egg Queue", OPTIONS.Eggs, Config.Hatch.SelectedEggs, function()
+    UIRefresh.EggsToHatch = createMultiSelect(hatchSection, "Eggs To Hatch", OPTIONS.Eggs, Config.Hatch.SelectedEggs, function()
         log("Egg selection updated: " .. selectedListToText(Config.Hatch.SelectedEggs))
         updateSelectedEggDependentControls()
     end)
 
-    UIRefresh.EggPriority = createDropdown(hatchSection, "First Egg", selectedEggRuleOptions(), Config.Hatch.EggPriority[1], function(value)
+    UIRefresh.EggPriority = createDropdown(hatchSection, "Priority Egg", selectedEggRuleOptions(), Config.Hatch.EggPriority[1], function(value)
         if not value or value == "" then
             Config.Hatch.EggPriority = {}
             log("Egg priority cleared.")
@@ -5855,7 +6028,7 @@ function buildMiscPage()
         Actions.AutoFeedPet(enabled)
     end)
 
-    UIRefresh.FeedPets = createMultiSelect(feedSection, "Pets To Feed", OPTIONS.Pets, Config.Main.FeedPets, function()
+    UIRefresh.FeedPets = createMultiSelect(feedSection, "Placed Pets To Feed", sortedPlacedPetNames(), Config.Main.FeedPets, function()
         log("Feed pet list updated: " .. selectedListToText(Config.Main.FeedPets))
     end)
 
@@ -5910,13 +6083,9 @@ function buildMiscPage()
     createTextInput(fruitSection, "Fruit Collect Interval", "2", Config.Misc.FruitCollectInterval, function(text)
         local value = tonumber(text)
         if value then
-            Config.Misc.FruitCollectInterval = math.max(0.5, value)
+            Config.Misc.FruitCollectInterval = math.max(2, value)
             log("Fruit collect interval set to " .. tostring(Config.Misc.FruitCollectInterval) .. "s")
         end
-    end)
-
-    createButton(fruitSection, "Collect Fruit Once", function()
-        Actions.CollectSelectedFruitOnce()
     end)
 
     createToggle(fruitSection, "Auto Sell Fruit", Config.Misc.AutoSellFruit, function(enabled)
@@ -5983,24 +6152,35 @@ buildMiscPage()
 function buildLogsPage()
     local logsSection = createSection(logsPage, "Activity")
 
+    logScrollFrame = Instance.new("ScrollingFrame")
+    logScrollFrame.BackgroundColor3 = Theme.Background
+    logScrollFrame.BorderSizePixel = 0
+    logScrollFrame.Size = UDim2.new(1, 0, 0, 420)
+    logScrollFrame.CanvasSize = UDim2.fromOffset(0, 420)
+    logScrollFrame.ScrollBarThickness = 6
+    logScrollFrame.ScrollingDirection = Enum.ScrollingDirection.Y
+    logScrollFrame.Parent = logsSection
+    makeCorner(logScrollFrame, 6)
+    makePadding(logScrollFrame, 10)
+
     logList = Instance.new("TextLabel")
-    logList.BackgroundColor3 = Theme.Background
+    logList.BackgroundTransparency = 1
     logList.BorderSizePixel = 0
-    logList.Size = UDim2.new(1, 0, 0, 380)
+    logList.Size = UDim2.new(1, -18, 0, 400)
     logList.Font = Enum.Font.Code
-    logList.Text = ""
+    logList.Text = table.concat(Runtime.Logs, "\n")
     logList.TextColor3 = Theme.Text
     logList.TextSize = 12
     logList.TextXAlignment = Enum.TextXAlignment.Left
     logList.TextYAlignment = Enum.TextYAlignment.Top
     logList.TextWrapped = false
-    logList.Parent = logsSection
-    makeCorner(logList, 6)
-    makePadding(logList, 10)
+    logList.Parent = logScrollFrame
 
     createButton(logsSection, "Clear Logs", function()
         Runtime.Logs = {}
         logList.Text = ""
+        logList.Size = UDim2.new(1, -18, 0, 400)
+        logScrollFrame.CanvasSize = UDim2.fromOffset(0, 420)
     end)
 end
 buildLogsPage()
@@ -6288,12 +6468,14 @@ task.spawn(function()
 
         if Config.Misc.AutoPickupFruit
             and not automationBusy.PickupFruit
-            and now - automationTimers.PickupFruit >= (tonumber(Config.Misc.FruitCollectInterval) or 2)
+            and now - automationTimers.PickupFruit >= math.max(2, tonumber(Config.Misc.FruitCollectInterval) or 2)
         then
             automationTimers.PickupFruit = now
             automationBusy.PickupFruit = true
             task.spawn(function()
-                Actions.CollectSelectedFruitOnce()
+                if Config.Misc.AutoPickupFruit then
+                    pcall(Actions.CollectSelectedFruitOnce, 12)
+                end
                 automationBusy.PickupFruit = false
             end)
         end
