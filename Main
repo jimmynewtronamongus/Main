@@ -817,12 +817,26 @@ end
 
 function formatPetDisplayName(baseName, kg)
     local cleanedName = stripStackData(baseName)
+    cleanedName = cleanedName:gsub("%s*%[%d+%.?%d*%s*[Kk][Gg]%]", "")
+    cleanedName = trimText(cleanedName)
     if cleanedName == "" or cleanedName:match("^Placed Pet ") or isUuidOnlyName(cleanedName) then
         cleanedName = "Unknown Pet"
     end
 
     if kg then
         return ("%s [%.2f KG]"):format(cleanedName, kg)
+    end
+
+    return cleanedName
+end
+
+function petBaseNameForCache(displayName)
+    local cleanedName = stripStackData(displayName)
+    cleanedName = cleanedName:gsub("%s*%[%d+%.?%d*%s*[Kk][Gg]%]", "")
+    cleanedName = trimText(cleanedName)
+
+    if cleanedName == "" or cleanedName == "Unknown Pet" or cleanedName:match("^Placed Pet ") or isUuidOnlyName(cleanedName) then
+        return nil
     end
 
     return cleanedName
@@ -884,8 +898,11 @@ function addInventoryEntry(category, displayName, instance)
             Inventory.ItemsByUuid[uuid] = Inventory.ItemsByUuid[uuid] or entry
         end
 
-        if category == "Pets" and not isUuidOnlyName(displayName) and not displayName:match("^Placed Pet ") then
-            PetDisplayNamesByUuid[uuidCacheKey(uuid)] = displayName
+        if category == "Pets" then
+            local cacheName = petBaseNameForCache(displayName)
+            if cacheName then
+                PetDisplayNamesByUuid[uuidCacheKey(uuid)] = cacheName
+            end
         end
     end
 end
@@ -1062,9 +1079,11 @@ function getPhysicalPetDisplayName(petModel, uuid)
     })
 
     if directName then
-        directName = stripStackData(directName)
-        PetDisplayNamesByUuid[uuidCacheKey(uuid)] = directName
-        return formatPetDisplayName(directName, kg)
+        directName = petBaseNameForCache(directName)
+        if directName then
+            PetDisplayNamesByUuid[uuidCacheKey(uuid)] = directName
+            return formatPetDisplayName(directName, kg)
+        end
     end
 
     for _, descendant in ipairs(petModel:GetDescendants()) do
@@ -1077,9 +1096,11 @@ function getPhysicalPetDisplayName(petModel, uuid)
         })
 
         if descendantName then
-            descendantName = stripStackData(descendantName)
-            PetDisplayNamesByUuid[uuidCacheKey(uuid)] = descendantName
-            return formatPetDisplayName(descendantName, kg)
+            descendantName = petBaseNameForCache(descendantName)
+            if descendantName then
+                PetDisplayNamesByUuid[uuidCacheKey(uuid)] = descendantName
+                return formatPetDisplayName(descendantName, kg)
+            end
         end
     end
 
@@ -1689,8 +1710,9 @@ end
 
 function cachePetEntryName(entry)
     local uuid = firstUuid(entry)
-    if uuid and entry and entry.Name and not isUuidOnlyName(entry.Name) and not tostring(entry.Name):match("^Placed Pet ") then
-        PetDisplayNamesByUuid[uuidCacheKey(uuid)] = entry.Name
+    local cacheName = petBaseNameForCache(entry and entry.Name)
+    if uuid and cacheName then
+        PetDisplayNamesByUuid[uuidCacheKey(uuid)] = cacheName
     end
 end
 
@@ -2237,27 +2259,28 @@ Config.Misc.ShopsToBuy = copyArrayToSelected(OPTIONS.Shops)
 Config.Misc.SeedsToPlace = copyArrayToSelected(OPTIONS.SeedsToPlace)
 
 local Theme = {
-    Background = Color3.fromRGB(12, 15, 21),
-    Window = Color3.fromRGB(20, 24, 33),
-    Nav = Color3.fromRGB(16, 20, 28),
-    Panel = Color3.fromRGB(29, 35, 47),
-    PanelAlt = Color3.fromRGB(36, 44, 58),
-    Input = Color3.fromRGB(13, 17, 24),
-    Stroke = Color3.fromRGB(78, 92, 113),
-    Text = Color3.fromRGB(244, 248, 252),
-    Muted = Color3.fromRGB(169, 181, 199),
-    ActiveText = Color3.fromRGB(7, 18, 19),
-    Accent = Color3.fromRGB(72, 214, 198),
-    AccentSoft = Color3.fromRGB(40, 82, 83),
-    AccentAlt = Color3.fromRGB(241, 184, 72),
-    Danger = Color3.fromRGB(225, 91, 115),
-    Off = Color3.fromRGB(64, 75, 92),
+    Background = Color3.fromRGB(7, 10, 15),
+    Window = Color3.fromRGB(13, 18, 27),
+    Nav = Color3.fromRGB(9, 13, 20),
+    Panel = Color3.fromRGB(18, 24, 34),
+    PanelAlt = Color3.fromRGB(24, 31, 43),
+    Input = Color3.fromRGB(10, 14, 22),
+    Stroke = Color3.fromRGB(47, 59, 78),
+    StrokeSoft = Color3.fromRGB(31, 40, 55),
+    Text = Color3.fromRGB(239, 245, 250),
+    Muted = Color3.fromRGB(151, 164, 184),
+    ActiveText = Color3.fromRGB(4, 12, 16),
+    Accent = Color3.fromRGB(53, 224, 190),
+    AccentSoft = Color3.fromRGB(24, 77, 73),
+    AccentAlt = Color3.fromRGB(255, 191, 79),
+    Danger = Color3.fromRGB(236, 85, 105),
+    Off = Color3.fromRGB(54, 65, 82),
 }
 
-local WINDOW_WIDTH = 980
-local WINDOW_HEIGHT = 650
-local TOPBAR_HEIGHT = 52
-local NAV_WIDTH = 194
+local WINDOW_WIDTH = 1000
+local WINDOW_HEIGHT = 660
+local TOPBAR_HEIGHT = 54
+local NAV_WIDTH = 186
 
 local screenGui
 local window
@@ -2285,11 +2308,12 @@ window.AnchorPoint = Vector2.new(0.5, 0.5)
 window.Position = UDim2.fromScale(0.5, 0.5)
 window.Size = UDim2.fromOffset(WINDOW_WIDTH, WINDOW_HEIGHT)
 window.BackgroundColor3 = Theme.Window
+window.BackgroundTransparency = 0.02
 window.BorderSizePixel = 0
 window.Parent = screenGui
 
 local windowCorner = Instance.new("UICorner")
-windowCorner.CornerRadius = UDim.new(0, 10)
+windowCorner.CornerRadius = UDim.new(0, 12)
 windowCorner.Parent = window
 
 local windowStroke = Instance.new("UIStroke")
@@ -2299,7 +2323,8 @@ windowStroke.Parent = window
 
 local windowGradient = Instance.new("UIGradient")
 windowGradient.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(24, 29, 40)),
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(19, 27, 40)),
+    ColorSequenceKeypoint.new(0.55, Theme.Window),
     ColorSequenceKeypoint.new(1, Theme.Window),
 })
 windowGradient.Rotation = 90
@@ -2313,34 +2338,41 @@ topbar.Size = UDim2.new(1, 0, 0, TOPBAR_HEIGHT)
 topbar.Parent = window
 
 local topbarCorner = Instance.new("UICorner")
-topbarCorner.CornerRadius = UDim.new(0, 10)
+topbarCorner.CornerRadius = UDim.new(0, 12)
 topbarCorner.Parent = topbar
 
 local topbarAccent = Instance.new("Frame")
 topbarAccent.Name = "AccentLine"
 topbarAccent.BackgroundColor3 = Theme.Accent
-topbarAccent.BackgroundTransparency = 0.08
+topbarAccent.BackgroundTransparency = 0
 topbarAccent.BorderSizePixel = 0
 topbarAccent.Position = UDim2.new(0, 0, 1, -2)
 topbarAccent.Size = UDim2.new(1, 0, 0, 2)
 topbarAccent.Parent = topbar
 
+local topbarGradient = Instance.new("UIGradient")
+topbarGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Theme.Background),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(16, 22, 33)),
+})
+topbarGradient.Parent = topbar
+
 local title = Instance.new("TextLabel")
 title.Name = "Title"
 title.BackgroundTransparency = 1
-title.Position = UDim2.fromOffset(18, 0)
+title.Position = UDim2.fromOffset(20, 0)
 title.Size = UDim2.new(1, -320, 1, 0)
-title.Font = Enum.Font.GothamBold
-title.Text = "GAG Main"
+title.Font = Enum.Font.GothamBlack
+title.Text = "GAG Control"
 title.TextColor3 = Theme.Text
-title.TextSize = 18
+title.TextSize = 19
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.Parent = topbar
 
 statusLabel = Instance.new("TextLabel")
 statusLabel.Name = "Status"
 statusLabel.BackgroundColor3 = Theme.PanelAlt
-statusLabel.BackgroundTransparency = 0
+statusLabel.BackgroundTransparency = 0.08
 statusLabel.AnchorPoint = Vector2.new(1, 0.5)
 statusLabel.Position = UDim2.new(1, -86, 0.5, 0)
 statusLabel.Size = UDim2.fromOffset(178, 26)
@@ -2356,7 +2388,7 @@ statusCorner.CornerRadius = UDim.new(0, 6)
 statusCorner.Parent = statusLabel
 
 local statusStroke = Instance.new("UIStroke")
-statusStroke.Color = Color3.fromRGB(54, 65, 82)
+statusStroke.Color = Theme.StrokeSoft
 statusStroke.Thickness = 1
 statusStroke.Parent = statusLabel
 
@@ -2366,6 +2398,7 @@ minimizeBtn.AnchorPoint = Vector2.new(1, 0.5)
 minimizeBtn.Position = UDim2.new(1, -48, 0.5, 0)
 minimizeBtn.Size = UDim2.fromOffset(32, 30)
 minimizeBtn.BackgroundColor3 = Theme.PanelAlt
+minimizeBtn.BackgroundTransparency = 0.05
 minimizeBtn.BorderSizePixel = 0
 minimizeBtn.Font = Enum.Font.GothamBold
 minimizeBtn.Text = "-"
@@ -2383,6 +2416,7 @@ closeBtn.AnchorPoint = Vector2.new(1, 0.5)
 closeBtn.Position = UDim2.new(1, -12, 0.5, 0)
 closeBtn.Size = UDim2.fromOffset(32, 30)
 closeBtn.BackgroundColor3 = Theme.Danger
+closeBtn.BackgroundTransparency = 0.02
 closeBtn.BorderSizePixel = 0
 closeBtn.Font = Enum.Font.GothamBold
 closeBtn.Text = "x"
@@ -2408,10 +2442,15 @@ nav.BorderSizePixel = 0
 nav.Size = UDim2.new(0, NAV_WIDTH, 1, 0)
 nav.Parent = body
 
+local navStroke = Instance.new("UIStroke")
+navStroke.Color = Theme.StrokeSoft
+navStroke.Thickness = 1
+navStroke.Parent = nav
+
 local navPadding = Instance.new("UIPadding")
 navPadding.PaddingTop = UDim.new(0, 14)
-navPadding.PaddingLeft = UDim.new(0, 12)
-navPadding.PaddingRight = UDim.new(0, 12)
+navPadding.PaddingLeft = UDim.new(0, 10)
+navPadding.PaddingRight = UDim.new(0, 10)
 navPadding.Parent = nav
 
 local navLayout = Instance.new("UIListLayout")
@@ -2567,8 +2606,8 @@ function createPage(name)
     page.Name = name .. "Page"
     page.BackgroundTransparency = 1
     page.BorderSizePixel = 0
-    page.Position = UDim2.fromOffset(20, 16)
-    page.Size = UDim2.new(1, -40, 1, -32)
+    page.Position = UDim2.fromOffset(18, 14)
+    page.Size = UDim2.new(1, -34, 1, -28)
     page.ScrollBarThickness = 5
     page.ScrollBarImageColor3 = Theme.Accent
     page.CanvasSize = UDim2.fromOffset(0, 0)
@@ -2580,7 +2619,7 @@ function createPage(name)
     padding.Parent = page
 
     local layout = Instance.new("UIListLayout")
-    layout.Padding = UDim.new(0, 12)
+    layout.Padding = UDim.new(0, 10)
     layout.SortOrder = Enum.SortOrder.LayoutOrder
     layout.Parent = page
 
@@ -2601,8 +2640,12 @@ function switchTab(name)
 
     for buttonName, button in pairs(navButtons) do
         local active = buttonName == name
-        button.BackgroundColor3 = active and Theme.Accent or Theme.Panel
+        button.BackgroundColor3 = active and Theme.Accent or Theme.Nav
         button.TextColor3 = active and Theme.ActiveText or Theme.Text
+        local accent = button:FindFirstChild("Accent")
+        if accent then
+            accent.Visible = active
+        end
     end
 end
 
@@ -2610,21 +2653,32 @@ function createNavButton(name, label, order)
     local button = Instance.new("TextButton")
     button.Name = name .. "Tab"
     button.LayoutOrder = order
-    button.Size = UDim2.new(1, 0, 0, 44)
-    button.BackgroundColor3 = Theme.Panel
+    button.Size = UDim2.new(1, 0, 0, 40)
+    button.BackgroundColor3 = Theme.Nav
     button.BorderSizePixel = 0
     button.AutoButtonColor = true
     button.Font = Enum.Font.GothamBold
     button.Text = label
     button.TextColor3 = Theme.Text
-    button.TextSize = 14
+    button.TextSize = 13
     button.TextXAlignment = Enum.TextXAlignment.Left
     button.TextTruncate = Enum.TextTruncate.AtEnd
     button.Parent = nav
 
-    makeCorner(button, 8)
-    makeStroke(button, Color3.fromRGB(43, 52, 68), 1)
-    makePadding(button, 14)
+    makeCorner(button, 7)
+    makeStroke(button, Theme.StrokeSoft, 1)
+    makePadding(button, 12)
+
+    local accent = Instance.new("Frame")
+    accent.Name = "Accent"
+    accent.BackgroundColor3 = Theme.Accent
+    accent.BorderSizePixel = 0
+    accent.Size = UDim2.new(0, 3, 1, -12)
+    accent.Position = UDim2.fromOffset(4, 6)
+    accent.Visible = false
+    accent.Parent = button
+    makeCorner(accent, 2)
+
     navButtons[name] = button
 
     button.MouseButton1Click:Connect(function()
@@ -2638,28 +2692,29 @@ function createSection(parent, titleText)
     local section = Instance.new("Frame")
     section.Name = titleText:gsub("%s+", "") .. "Section"
     section.BackgroundColor3 = Theme.Panel
+    section.BackgroundTransparency = 0.04
     section.BorderSizePixel = 0
     section.Size = UDim2.new(1, -4, 0, 10)
     section.AutomaticSize = Enum.AutomaticSize.Y
     section.Parent = parent
 
-    makeCorner(section, 10)
-    makeStroke(section, Theme.Stroke, 1)
-    makePadding(section, 16)
+    makeCorner(section, 8)
+    makeStroke(section, Theme.StrokeSoft, 1)
+    makePadding(section, 14)
 
     local layout = Instance.new("UIListLayout")
-    layout.Padding = UDim.new(0, 12)
+    layout.Padding = UDim.new(0, 9)
     layout.SortOrder = Enum.SortOrder.LayoutOrder
     layout.Parent = section
 
     local heading = Instance.new("TextLabel")
     heading.Name = "Heading"
     heading.BackgroundTransparency = 1
-    heading.Size = UDim2.new(1, 0, 0, 24)
+    heading.Size = UDim2.new(1, 0, 0, 22)
     heading.Font = Enum.Font.GothamBold
     heading.Text = titleText
     heading.TextColor3 = Theme.Accent
-    heading.TextSize = 16
+    heading.TextSize = 14
     heading.TextXAlignment = Enum.TextXAlignment.Left
     heading.Parent = section
 
@@ -2669,41 +2724,42 @@ end
 function createRow(parent, height)
     local row = Instance.new("Frame")
     row.BackgroundColor3 = Theme.PanelAlt
+    row.BackgroundTransparency = 0.06
     row.BorderSizePixel = 0
-    row.Size = UDim2.new(1, 0, 0, height or 46)
+    row.Size = UDim2.new(1, 0, 0, height or 44)
     row.Parent = parent
-    makeCorner(row, 8)
-    makeStroke(row, Color3.fromRGB(50, 61, 78), 1)
+    makeCorner(row, 7)
+    makeStroke(row, Theme.StrokeSoft, 1)
     return row
 end
 
 function createToggle(parent, text, default, callback)
-    local row = createRow(parent, 48)
+    local row = createRow(parent, 44)
 
     local label = Instance.new("TextLabel")
     label.BackgroundTransparency = 1
-    label.Position = UDim2.fromOffset(14, 0)
+    label.Position = UDim2.fromOffset(12, 0)
     label.Size = UDim2.new(1, -86, 1, 0)
     label.Font = Enum.Font.GothamMedium
     label.Text = text
     label.TextColor3 = Theme.Text
-    label.TextSize = 13
+    label.TextSize = 12
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.TextTruncate = Enum.TextTruncate.AtEnd
     label.Parent = row
 
     local button = Instance.new("TextButton")
     button.AnchorPoint = Vector2.new(1, 0.5)
-    button.Position = UDim2.new(1, -14, 0.5, 0)
-    button.Size = UDim2.fromOffset(54, 26)
+    button.Position = UDim2.new(1, -12, 0.5, 0)
+    button.Size = UDim2.fromOffset(50, 24)
     button.BackgroundColor3 = default and Theme.Accent or Theme.Off
     button.BorderSizePixel = 0
     button.Font = Enum.Font.GothamBold
     button.Text = default and "ON" or "OFF"
     button.TextColor3 = default and Color3.fromRGB(14, 18, 24) or Theme.Text
-    button.TextSize = 11
+    button.TextSize = 10
     button.Parent = row
-    makeCorner(button, 7)
+    makeCorner(button, 6)
 
     local enabled = default == true
     local function setEnabled(value, fire)
@@ -2736,14 +2792,15 @@ function createButton(parent, text, callback)
     local button = Instance.new("TextButton")
     button.BackgroundColor3 = Theme.AccentAlt
     button.BorderSizePixel = 0
-    button.Size = UDim2.new(1, 0, 0, 42)
+    button.Size = UDim2.new(1, 0, 0, 38)
     button.Font = Enum.Font.GothamBold
     button.Text = text
     button.TextColor3 = Color3.fromRGB(18, 21, 28)
-    button.TextSize = 13
+    button.TextSize = 12
     button.Parent = parent
 
-    makeCorner(button, 8)
+    makeCorner(button, 7)
+    makeStroke(button, Color3.fromRGB(255, 214, 132), 1)
 
     button.MouseButton1Click:Connect(function()
         if callback then
@@ -2755,24 +2812,24 @@ function createButton(parent, text, callback)
 end
 
 function createTextInput(parent, labelText, placeholder, default, callback)
-    local row = createRow(parent, 48)
+    local row = createRow(parent, 44)
 
     local label = Instance.new("TextLabel")
     label.BackgroundTransparency = 1
-    label.Position = UDim2.fromOffset(14, 0)
+    label.Position = UDim2.fromOffset(12, 0)
     label.Size = UDim2.new(0.38, -14, 1, 0)
     label.Font = Enum.Font.GothamMedium
     label.Text = labelText
     label.TextColor3 = Theme.Text
-    label.TextSize = 13
+    label.TextSize = 12
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.TextTruncate = Enum.TextTruncate.AtEnd
     label.Parent = row
 
     local box = Instance.new("TextBox")
     box.AnchorPoint = Vector2.new(1, 0.5)
-    box.Position = UDim2.new(1, -12, 0.5, 0)
-    box.Size = UDim2.new(0.62, -8, 0, 32)
+    box.Position = UDim2.new(1, -10, 0.5, 0)
+    box.Size = UDim2.new(0.62, -8, 0, 30)
     box.BackgroundColor3 = Theme.Input
     box.BorderSizePixel = 0
     box.ClearTextOnFocus = false
@@ -2786,6 +2843,7 @@ function createTextInput(parent, labelText, placeholder, default, callback)
     box.Parent = row
 
     makeCorner(box, 6)
+    makeStroke(box, Theme.StrokeSoft, 1)
     makePadding(box, 8)
 
     box.FocusLost:Connect(function()
@@ -2798,7 +2856,7 @@ function createTextInput(parent, labelText, placeholder, default, callback)
 end
 
 function optionListHeight(optionCount)
-    return math.min(math.max(optionCount or 1, 1) * 34 + 10, 240)
+    return math.min(math.max(optionCount or 1, 1) * 32 + 10, 230)
 end
 
 function createDropdown(parent, labelText, options, default, callback)
@@ -2807,7 +2865,7 @@ function createDropdown(parent, labelText, options, default, callback)
 
     local container = Instance.new("Frame")
     container.BackgroundTransparency = 1
-    container.Size = UDim2.new(1, 0, 0, 48)
+    container.Size = UDim2.new(1, 0, 0, 44)
     container.AutomaticSize = Enum.AutomaticSize.Y
     container.Parent = parent
 
@@ -2816,25 +2874,25 @@ function createDropdown(parent, labelText, options, default, callback)
     layout.Padding = UDim.new(0, 6)
     layout.Parent = container
 
-    local row = createRow(container, 48)
+    local row = createRow(container, 44)
     row.LayoutOrder = 1
 
     local label = Instance.new("TextLabel")
     label.BackgroundTransparency = 1
-    label.Position = UDim2.fromOffset(14, 0)
+    label.Position = UDim2.fromOffset(12, 0)
     label.Size = UDim2.new(0.38, -14, 1, 0)
     label.Font = Enum.Font.GothamMedium
     label.Text = labelText
     label.TextColor3 = Theme.Text
-    label.TextSize = 13
+    label.TextSize = 12
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.TextTruncate = Enum.TextTruncate.AtEnd
     label.Parent = row
 
     local button = Instance.new("TextButton")
     button.AnchorPoint = Vector2.new(1, 0.5)
-    button.Position = UDim2.new(1, -12, 0.5, 0)
-    button.Size = UDim2.new(0.62, -8, 0, 32)
+    button.Position = UDim2.new(1, -10, 0.5, 0)
+    button.Size = UDim2.new(0.62, -8, 0, 30)
     button.BackgroundColor3 = Theme.Input
     button.BorderSizePixel = 0
     button.Font = Enum.Font.Gotham
@@ -2845,6 +2903,7 @@ function createDropdown(parent, labelText, options, default, callback)
     button.TextTruncate = Enum.TextTruncate.AtEnd
     button.Parent = row
     makeCorner(button, 6)
+    makeStroke(button, Theme.StrokeSoft, 1)
     makePadding(button, 8)
 
     local list = Instance.new("ScrollingFrame")
@@ -2858,8 +2917,8 @@ function createDropdown(parent, labelText, options, default, callback)
     list.ScrollBarImageColor3 = Theme.Accent
     list.CanvasSize = UDim2.fromOffset(0, 0)
     list.Parent = container
-    makeCorner(list, 8)
-    makeStroke(list, Theme.Stroke, 1)
+    makeCorner(list, 7)
+    makeStroke(list, Theme.StrokeSoft, 1)
     makePadding(list, 4)
 
     local listLayout = Instance.new("UIListLayout")
@@ -2888,7 +2947,7 @@ function createDropdown(parent, labelText, options, default, callback)
             empty.LayoutOrder = 1
             empty.BackgroundColor3 = Theme.PanelAlt
             empty.BorderSizePixel = 0
-            empty.Size = UDim2.new(1, 0, 0, 30)
+            empty.Size = UDim2.new(1, 0, 0, 28)
             empty.AutoButtonColor = false
             empty.Font = Enum.Font.Gotham
             empty.Text = "No items found"
@@ -2906,7 +2965,7 @@ function createDropdown(parent, labelText, options, default, callback)
             item.LayoutOrder = index
             item.BackgroundColor3 = Theme.PanelAlt
             item.BorderSizePixel = 0
-            item.Size = UDim2.new(1, 0, 0, 30)
+            item.Size = UDim2.new(1, 0, 0, 28)
             item.Font = Enum.Font.Gotham
             item.Text = option
             item.TextColor3 = Theme.Text
@@ -2964,7 +3023,7 @@ function createMultiSelect(parent, labelText, options, selected, callback)
 
     local container = Instance.new("Frame")
     container.BackgroundTransparency = 1
-    container.Size = UDim2.new(1, 0, 0, 48)
+    container.Size = UDim2.new(1, 0, 0, 44)
     container.AutomaticSize = Enum.AutomaticSize.Y
     container.Parent = parent
 
@@ -2973,25 +3032,25 @@ function createMultiSelect(parent, labelText, options, selected, callback)
     layout.Padding = UDim.new(0, 6)
     layout.Parent = container
 
-    local row = createRow(container, 48)
+    local row = createRow(container, 44)
     row.LayoutOrder = 1
 
     local label = Instance.new("TextLabel")
     label.BackgroundTransparency = 1
-    label.Position = UDim2.fromOffset(14, 0)
+    label.Position = UDim2.fromOffset(12, 0)
     label.Size = UDim2.new(0.35, -12, 1, 0)
     label.Font = Enum.Font.GothamMedium
     label.Text = labelText
     label.TextColor3 = Theme.Text
-    label.TextSize = 13
+    label.TextSize = 12
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.TextTruncate = Enum.TextTruncate.AtEnd
     label.Parent = row
 
     local button = Instance.new("TextButton")
     button.AnchorPoint = Vector2.new(1, 0.5)
-    button.Position = UDim2.new(1, -12, 0.5, 0)
-    button.Size = UDim2.new(0.65, -8, 0, 32)
+    button.Position = UDim2.new(1, -10, 0.5, 0)
+    button.Size = UDim2.new(0.65, -8, 0, 30)
     button.BackgroundColor3 = Theme.Input
     button.BorderSizePixel = 0
     button.Font = Enum.Font.Gotham
@@ -3002,6 +3061,7 @@ function createMultiSelect(parent, labelText, options, selected, callback)
     button.TextTruncate = Enum.TextTruncate.AtEnd
     button.Parent = row
     makeCorner(button, 6)
+    makeStroke(button, Theme.StrokeSoft, 1)
     makePadding(button, 8)
 
     local list = Instance.new("ScrollingFrame")
@@ -3015,8 +3075,8 @@ function createMultiSelect(parent, labelText, options, selected, callback)
     list.ScrollBarImageColor3 = Theme.Accent
     list.CanvasSize = UDim2.fromOffset(0, 0)
     list.Parent = container
-    makeCorner(list, 8)
-    makeStroke(list, Theme.Stroke, 1)
+    makeCorner(list, 7)
+    makeStroke(list, Theme.StrokeSoft, 1)
     makePadding(list, 4)
 
     local listLayout = Instance.new("UIListLayout")
@@ -3059,7 +3119,7 @@ function createMultiSelect(parent, labelText, options, selected, callback)
             empty.LayoutOrder = 1
             empty.BackgroundColor3 = Theme.PanelAlt
             empty.BorderSizePixel = 0
-            empty.Size = UDim2.new(1, 0, 0, 30)
+            empty.Size = UDim2.new(1, 0, 0, 28)
             empty.AutoButtonColor = false
             empty.Font = Enum.Font.Gotham
             empty.Text = "No items found"
@@ -3077,7 +3137,7 @@ function createMultiSelect(parent, labelText, options, selected, callback)
             item.LayoutOrder = index
             item.BackgroundColor3 = Theme.PanelAlt
             item.BorderSizePixel = 0
-            item.Size = UDim2.new(1, 0, 0, 30)
+            item.Size = UDim2.new(1, 0, 0, 28)
             item.Font = Enum.Font.Gotham
             item.Text = option
             item.TextColor3 = Theme.Text
