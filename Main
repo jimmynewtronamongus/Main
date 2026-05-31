@@ -98,7 +98,10 @@ local Inventory = {
     ItemsByUuid = {},
 }
 
-local PetDisplayNamesByUuid = {}
+local env = (type(getgenv) == "function" and getgenv()) or _G
+env.GAGPetDisplayNamesByUuid = env.GAGPetDisplayNamesByUuid or {}
+local PetDisplayNamesByUuid = env.GAGPetDisplayNamesByUuid
+local PET_NAME_MEMORY_FILE = "gag-main-pet-names.json"
 
 local RemotePaths = {
     PetsService = {"PetsService"},
@@ -820,7 +823,7 @@ function formatPetDisplayName(baseName, kg)
     cleanedName = cleanedName:gsub("%s*%[%d+%.?%d*%s*[Kk][Gg]%]", "")
     cleanedName = trimText(cleanedName)
     if cleanedName == "" or cleanedName:match("^Placed Pet ") or isUuidOnlyName(cleanedName) then
-        cleanedName = "Unknown Pet"
+        cleanedName = "Pet"
     end
 
     if kg then
@@ -828,6 +831,35 @@ function formatPetDisplayName(baseName, kg)
     end
 
     return cleanedName
+end
+
+function loadPetNameMemory()
+    if type(readfile) ~= "function" or type(isfile) ~= "function" or not isfile(PET_NAME_MEMORY_FILE) then
+        return
+    end
+
+    local ok, decoded = pcall(function()
+        return HttpService:JSONDecode(readfile(PET_NAME_MEMORY_FILE))
+    end)
+
+    if ok and type(decoded) == "table" then
+        for key, value in pairs(decoded) do
+            local cacheName = petBaseNameForCache(value)
+            if cacheName then
+                PetDisplayNamesByUuid[tostring(key)] = cacheName
+            end
+        end
+    end
+end
+
+function savePetNameMemory()
+    if type(writefile) ~= "function" then
+        return
+    end
+
+    pcall(function()
+        writefile(PET_NAME_MEMORY_FILE, HttpService:JSONEncode(PetDisplayNamesByUuid))
+    end)
 end
 
 function petBaseNameForCache(displayName)
@@ -840,6 +872,20 @@ function petBaseNameForCache(displayName)
     end
 
     return cleanedName
+end
+
+loadPetNameMemory()
+
+function rememberPetName(uuid, name)
+    local key = uuid and uuidCacheKey(uuid) or nil
+    local cacheName = petBaseNameForCache(name)
+    if key and key ~= "" and cacheName then
+        PetDisplayNamesByUuid[key] = PetDisplayNamesByUuid[key] or cacheName
+        savePetNameMemory()
+        return PetDisplayNamesByUuid[key]
+    end
+
+    return nil
 end
 
 function resetInventory()
@@ -899,10 +945,7 @@ function addInventoryEntry(category, displayName, instance)
         end
 
         if category == "Pets" then
-            local cacheName = petBaseNameForCache(displayName)
-            if cacheName then
-                PetDisplayNamesByUuid[uuidCacheKey(uuid)] = cacheName
-            end
+            rememberPetName(uuid, displayName)
         end
     end
 end
@@ -959,6 +1002,11 @@ function getTextField(instance, names)
     for _, child in ipairs(instance:GetChildren()) do
         if child:IsA("StringValue") and inventoryKeyMatchesAny(child.Name, names) then
             local cleaned = stripStackData(child.Value)
+            if cleaned ~= "" and not isUuidOnlyName(cleaned) then
+                return cleaned
+            end
+        elseif child:IsA("ObjectValue") and child.Value and inventoryKeyMatchesAny(child.Name, names) then
+            local cleaned = stripStackData(child.Value.Name)
             if cleaned ~= "" and not isUuidOnlyName(cleaned) then
                 return cleaned
             end
@@ -1081,8 +1129,7 @@ function getPhysicalPetDisplayName(petModel, uuid)
     if directName then
         directName = petBaseNameForCache(directName)
         if directName then
-            PetDisplayNamesByUuid[uuidCacheKey(uuid)] = directName
-            return formatPetDisplayName(directName, kg)
+            return formatPetDisplayName(rememberPetName(uuid, directName) or directName, kg)
         end
     end
 
@@ -1098,8 +1145,7 @@ function getPhysicalPetDisplayName(petModel, uuid)
         if descendantName then
             descendantName = petBaseNameForCache(descendantName)
             if descendantName then
-                PetDisplayNamesByUuid[uuidCacheKey(uuid)] = descendantName
-                return formatPetDisplayName(descendantName, kg)
+                return formatPetDisplayName(rememberPetName(uuid, descendantName) or descendantName, kg)
             end
         end
     end
@@ -1107,8 +1153,7 @@ function getPhysicalPetDisplayName(petModel, uuid)
     local bestName = findPetBaseNameInText(getAttributeText(petModel))
 
     if bestName then
-        PetDisplayNamesByUuid[uuidCacheKey(uuid)] = bestName
-        return formatPetDisplayName(bestName, kg)
+        return formatPetDisplayName(rememberPetName(uuid, bestName) or bestName, kg)
     end
 
     return formatPetDisplayName(nil, kg)
@@ -1710,10 +1755,7 @@ end
 
 function cachePetEntryName(entry)
     local uuid = firstUuid(entry)
-    local cacheName = petBaseNameForCache(entry and entry.Name)
-    if uuid and cacheName then
-        PetDisplayNamesByUuid[uuidCacheKey(uuid)] = cacheName
-    end
+    rememberPetName(uuid, entry and entry.Name)
 end
 
 function getPlacementCFrame(slotIndex)
@@ -1914,6 +1956,57 @@ function getFarmPhysicalContainer(name)
     return nil
 end
 
+function getFarmPhysicalContainers(name)
+    local containers = {}
+    local seen = {}
+    local function add(container)
+        if container and not seen[container] then
+            seen[container] = true
+            containers[#containers + 1] = container
+        end
+    end
+
+    add(getFarmPhysicalContainer(name))
+
+    local farmRoot = Workspace:FindFirstChild("Farm")
+    if farmRoot then
+        local directFarm = farmRoot:FindFirstChild("Farm")
+        local directImportant = directFarm and directFarm:FindFirstChild("Important")
+        add(directImportant and directImportant:FindFirstChild(name))
+
+        for _, farm in ipairs(farmRoot:GetChildren()) do
+            local important = farm:FindFirstChild("Important")
+            add(important and important:FindFirstChild(name))
+        end
+    end
+
+    return containers
+end
+
+function collectPhysicalEggObjects()
+    local eggs = {}
+    local seen = {}
+    local function add(object)
+        if object and not seen[object] and isLikelyEggName(getPhysicalEggName(object)) then
+            seen[object] = true
+            eggs[#eggs + 1] = object
+        end
+    end
+
+    for _, objects in ipairs(getFarmPhysicalContainers("Objects_Physical")) do
+        for _, child in ipairs(objects:GetChildren()) do
+            add(child)
+        end
+        for _, descendant in ipairs(objects:GetDescendants()) do
+            if descendant.Name == "PetEgg" or isLikelyEggName(descendant.Name) then
+                add(descendant)
+            end
+        end
+    end
+
+    return eggs
+end
+
 function getPhysicalEggName(instance)
     local name = stripStackData(instance and instance.Name or "")
     local ok, attributes = pcall(function()
@@ -1948,8 +2041,9 @@ function findHatchableEggObject()
         end
     end
 
+    local eggObjects = collectPhysicalEggObjects()
     for _, wantedEgg in ipairs(priority) do
-        for _, object in ipairs(objects:GetChildren()) do
+        for _, object in ipairs(eggObjects) do
             local objectName = getPhysicalEggName(object)
             if objectName == wantedEgg or tostring(object.Name):find(wantedEgg, 1, true) then
                 return object
@@ -1957,7 +2051,7 @@ function findHatchableEggObject()
         end
     end
 
-    return objects:GetChildren()[1]
+    return eggObjects[1]
 end
 
 function equipToolInstance(instance)
@@ -4306,13 +4400,12 @@ function installHatchActions()
             return
         end
 
-        local objects = getFarmPhysicalContainer("Objects_Physical")
-        if not objects then
+        local eggObjects = collectPhysicalEggObjects()
+        if #eggObjects == 0 then
             return
         end
 
-        for _, object in ipairs(objects:GetChildren()) do
-            if isLikelyEggName(getPhysicalEggName(object)) then
+        for _, object in ipairs(eggObjects) do
                 local ready = isEggReadyToHatch(object)
                 local billboard = Runtime.EggEspBillboards[object]
                 local adornee = getEggAdornee(object)
@@ -4350,7 +4443,6 @@ function installHatchActions()
                         label.TextColor3 = ready and Theme.Text or Theme.Muted
                     end
                 end
-            end
         end
     end
 
@@ -4484,6 +4576,18 @@ function installHatchActions()
     local function readBuffPercent(entry, includeKeywords, fallbackPercent)
         local best
 
+        local function parsePercent(value)
+            if type(value) == "number" then
+                return value
+            end
+
+            if type(value) == "string" then
+                return tonumber(value:match("(%d+%.?%d*)%s*%%?"))
+            end
+
+            return nil
+        end
+
         local function matches(name)
             local normalized = tostring(name or ""):lower():gsub("[^%w]", "")
             if normalized == "" then
@@ -4511,16 +4615,17 @@ function installHatchActions()
         end
 
         local function record(name, value)
-            if type(value) ~= "number" or not matches(name) then
+            local numeric = parsePercent(value)
+            if not numeric or not matches(name) then
                 return
             end
 
-            if value <= 1 then
-                value = value * 100
+            if numeric <= 1 then
+                numeric = numeric * 100
             end
 
-            if not best or value > best then
-                best = value
+            if not best or numeric > best then
+                best = numeric
             end
         end
 
@@ -4535,7 +4640,7 @@ function installHatchActions()
             end
 
             for _, descendant in ipairs(instance:GetDescendants()) do
-                if descendant:IsA("NumberValue") or descendant:IsA("IntValue") then
+                if descendant:IsA("NumberValue") or descendant:IsA("IntValue") or descendant:IsA("StringValue") then
                     record(descendant.Name, descendant.Value)
                 end
             end
@@ -4566,6 +4671,9 @@ function installHatchActions()
         end
 
         local lowerName = tostring(entry and entry.Name or ""):lower()
+        for _, instance in ipairs(entry and entry.Instances or {}) do
+            lowerName = lowerName .. " " .. getAttributeText(instance)
+        end
         local function addEstimate(label, value)
             if value and value > 0 then
                 if value <= 1 then
@@ -4591,18 +4699,7 @@ function installHatchActions()
     end
 
     local function currentPlacedEggCount()
-        local objects = getFarmPhysicalContainer("Objects_Physical")
-        if not objects then
-            return 0
-        end
-
-        local count = 0
-        for _, object in ipairs(objects:GetChildren()) do
-            if isLikelyEggName(getPhysicalEggName(object)) then
-                count = count + 1
-            end
-        end
-        return count
+        return #collectPhysicalEggObjects()
     end
 
     local function selectedEggToolInstances(priority)
@@ -4734,6 +4831,9 @@ function installHatchActions()
                 end
 
                 local lowerName = tostring(entry.Name or ""):lower()
+                for _, instance in ipairs(entry.Instances or {}) do
+                    lowerName = lowerName .. " " .. getAttributeText(instance)
+                end
                 if lowerName:find("seal", 1, true) then
                     sellRefundTotal = sellRefundTotal + (readBuffPercent(entry, {"seal", "sell", "refund", "eggback"}, 0) or 0)
                 elseif lowerName:find("koi", 1, true) then
