@@ -213,6 +213,7 @@ local State = {
     Busy = {},
     EggEsp = {},
     EggSignals = {},
+    EggSignalKeys = {},
     EggRemoteListenersInstalled = false,
 }
 
@@ -1177,8 +1178,61 @@ local function readEggField(egg, key)
     return nil
 end
 
+local function eggWorldPosition(egg)
+    if egg:IsA("BasePart") then
+        return egg.Position
+    end
+    if egg:IsA("Model") then
+        local ok, cf = pcall(function()
+            return egg:GetPivot()
+        end)
+        if ok then
+            return cf.Position
+        end
+        local part = egg.PrimaryPart or egg:FindFirstChildWhichIsA("BasePart", true)
+        return part and part.Position
+    end
+    local part = egg:FindFirstChildWhichIsA("BasePart", true)
+    return part and part.Position
+end
+
+local function eggSignalKey(egg)
+    local pos = eggWorldPosition(egg)
+    local name = canonicalEggName(eggDisplayName(egg))
+    if pos then
+        return ("%s@%d,%d,%d"):format(name, math.floor(pos.X + 0.5), math.floor(pos.Y + 0.5), math.floor(pos.Z + 0.5))
+    end
+    return name .. "@" .. egg:GetFullName()
+end
+
+local function eggTimerTextInfo(egg)
+    for _, descendant in ipairs(egg:GetDescendants()) do
+        if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
+            local name = descendant.Name:lower()
+            if name:find("time", 1, true)
+                or name:find("hatch", 1, true)
+                or name:find("ready", 1, true)
+                or name:find("status", 1, true)
+            then
+                local text = tostring(descendant.Text or "")
+                local lower = text:lower()
+                if lower:match("%d+:%d+") or lower:match("%d+%s*[smh]") then
+                    return false, text
+                end
+                if lower:find("ready", 1, true)
+                    and not lower:find("not ready", 1, true)
+                    and not lower:find("ready in", 1, true)
+                then
+                    return true, text
+                end
+            end
+        end
+    end
+    return nil, nil
+end
+
 local function eggReadyInfo(egg)
-    local signal = State.EggSignals[egg]
+    local signal = State.EggSignals[egg] or State.EggSignalKeys[eggSignalKey(egg)]
     if signal and signal.Ready == true then
         return true, signal.Reason or "ready remote"
     end
@@ -1213,6 +1267,11 @@ local function eggReadyInfo(egg)
         end
     end
 
+    local textReady, textReason = eggTimerTextInfo(egg)
+    if textReady ~= nil then
+        return textReady, textReason
+    end
+
     local readyTime = tonumber(readEggField(egg, "ReadyTime"))
     if readyTime then
         if readyTime > 100000 then
@@ -1240,24 +1299,6 @@ end
 local function eggReady(egg)
     local ready = eggReadyInfo(egg)
     return ready == true
-end
-
-local function eggWorldPosition(egg)
-    if egg:IsA("BasePart") then
-        return egg.Position
-    end
-    if egg:IsA("Model") then
-        local ok, cf = pcall(function()
-            return egg:GetPivot()
-        end)
-        if ok then
-            return cf.Position
-        end
-        local part = egg.PrimaryPart or egg:FindFirstChildWhichIsA("BasePart", true)
-        return part and part.Position
-    end
-    local part = egg:FindFirstChildWhichIsA("BasePart", true)
-    return part and part.Position
 end
 
 local function eggRoots()
@@ -1349,6 +1390,8 @@ local function hatchEgg(egg)
     return ok and 1 or 0
 end
 
+local updateEggEsp
+
 local function noteEggSignal(egg, ready, reason, progress)
     if typeof(egg) ~= "Instance" then
         return
@@ -1365,6 +1408,7 @@ local function noteEggSignal(egg, ready, reason, progress)
     end
     signal.UpdatedAt = os.clock()
     State.EggSignals[egg] = signal
+    State.EggSignalKeys[eggSignalKey(egg)] = signal
 end
 
 local function installEggRemoteListeners()
@@ -1379,6 +1423,7 @@ local function installEggRemoteListeners()
             if typeof(egg) == "Instance" then
                 local numericProgress = tonumber(progress)
                 noteEggSignal(egg, numericProgress and numericProgress >= 0.999 or nil, "PetEggService", numericProgress)
+                task.defer(updateEggEsp)
             end
         end)
     end
@@ -1388,6 +1433,7 @@ local function installEggRemoteListeners()
         readyRemote.OnClientEvent:Connect(function(egg, ready)
             if typeof(egg) == "Instance" then
                 noteEggSignal(egg, ready ~= false, "EggReadyToHatch_RE")
+                task.defer(updateEggEsp)
             end
         end)
     end
@@ -1451,7 +1497,7 @@ local function eggEspTargets()
     return targets
 end
 
-local function updateEggEsp()
+function updateEggEsp()
     if not Config.Hatch.EggEsp then
         clearEggEsp()
         return
@@ -2489,7 +2535,7 @@ task.spawn(function()
             tickAction("Rebirth", tonumber(Config.Utility.RebirthInterval) or 10, "Rebirth", Actions.RebirthOnce)
         end
         if Config.Hatch.EggEsp then
-            tickAction("EggEsp", 1, "EggEsp", updateEggEsp)
+            tickAction("EggEsp", 0.35, "EggEsp", updateEggEsp)
         else
             clearEggEsp()
         end
