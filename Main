@@ -629,30 +629,84 @@ local function selectedEntries(bucket, selected)
     return out
 end
 
+local function farmOwnerText(farm)
+    local data = farm and farm:FindFirstChild("Important")
+    data = data and data:FindFirstChild("Data")
+    local owner = data and data:FindFirstChild("Owner")
+    if owner and owner:IsA("ValueBase") and owner.Value ~= nil then
+        return tostring(owner.Value)
+    end
+
+    for _, key in ipairs({"Owner", "OwnerName", "PlayerName", "UserId", "OwnerId"}) do
+        local ok, value = pcall(function()
+            return farm:GetAttribute(key)
+        end)
+        if ok and value ~= nil then
+            return tostring(value)
+        end
+    end
+    return nil
+end
+
+local function isOwnFarm(farm)
+    local owner = farmOwnerText(farm)
+    if not owner or owner == "" then
+        return false
+    end
+    return owner == player.Name
+        or owner == player.DisplayName
+        or owner == tostring(player.UserId)
+end
+
+local function findOwnFarm()
+    local roots = {
+        Workspace:FindFirstChild("Farm"),
+        Workspace:FindFirstChild("Farms"),
+        Workspace:FindFirstChild("Plots"),
+        Workspace:FindFirstChild("PlayerFarms"),
+    }
+
+    for _, root in ipairs(roots) do
+        if root then
+            if isOwnFarm(root) then
+                return root
+            end
+            for _, child in ipairs(root:GetChildren()) do
+                if isOwnFarm(child) then
+                    return child
+                end
+                local nested = child:FindFirstChild("Farm")
+                if nested and isOwnFarm(nested) then
+                    return nested
+                end
+            end
+        end
+    end
+
+    for _, descendant in ipairs(Workspace:GetDescendants()) do
+        if descendant.Name == "Important" and descendant.Parent and isOwnFarm(descendant.Parent) then
+            return descendant.Parent
+        end
+    end
+    return nil
+end
+
+local function ownFarmImportant()
+    local farm = findOwnFarm()
+    return farm and farm:FindFirstChild("Important")
+end
+
 local function eggPlacementArea()
-    local direct = Workspace:FindFirstChild("Farm")
-    if direct then
-        for _, descendant in ipairs(direct:GetDescendants()) do
+    local important = ownFarmImportant()
+    local locations = important and important:FindFirstChild("Plant_Locations")
+    if locations then
+        for _, descendant in ipairs(locations:GetDescendants()) do
             if descendant.Name == "Can_Plant" and descendant:IsA("BasePart") then
                 return descendant
             end
         end
     end
-
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    local rootPos = root and root.Position
-    local best
-    local bestDistance = math.huge
-    for _, descendant in ipairs(Workspace:GetDescendants()) do
-        if descendant.Name == "Can_Plant" and descendant:IsA("BasePart") then
-            local distance = rootPos and (descendant.Position - rootPos).Magnitude or 0
-            if distance < bestDistance then
-                best = descendant
-                bestDistance = distance
-            end
-        end
-    end
-    return best
+    return nil
 end
 
 local function placementCFrame(index)
@@ -669,10 +723,7 @@ local function placementCFrame(index)
         return area.CFrame * CFrame.new(x, 0.5, z)
     end
 
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    local base = root and root.CFrame or CFrame.new()
-    local offset = Vector3.new(((index - 1) % 4) * 3, 0, math.floor((index - 1) / 4) * 3)
-    return base + offset
+    return nil
 end
 
 local Actions = {}
@@ -895,18 +946,18 @@ end
 
 local function eggRoots()
     local roots = {}
-    local names = {
-        "Farm", "Farms", "Plots", "PlayerFarm", "PlayerFarms",
-        "PetEggs", "Eggs", "EggModels", "Objects_Physical",
-    }
-    for _, name in ipairs(names) do
-        local found = Workspace:FindFirstChild(name)
-        if found then
-            roots[#roots + 1] = found
-        end
+    local important = ownFarmImportant()
+    local physical = important and important:FindFirstChild("Objects_Physical")
+    if physical then
+        roots[#roots + 1] = physical
+    elseif important then
+        roots[#roots + 1] = important
     end
     if #roots == 0 then
-        roots[1] = Workspace
+        local farm = findOwnFarm()
+        if farm then
+            roots[1] = farm
+        end
     end
     return roots
 end
@@ -1002,6 +1053,10 @@ function Actions.PlaceEggsOnce()
         equip(entry.Instance)
         task.wait(0.08)
         local cf = placementCFrame(alreadyPlaced + count + 1)
+        if not cf then
+            log("Place eggs skipped: could not find your own garden Plant_Locations.")
+            return count
+        end
         local pos = cf.Position
 
         local before = countPhysicalEggs()
@@ -1093,7 +1148,12 @@ function Actions.PlantSeedsOnce()
     for _, entry in ipairs(selectedEntries("Seeds", Config.Utility.SelectedSeeds)) do
         equip(entry.Instance)
         task.wait(0.03)
-        local pos = placementCFrame(fired + 1).Position
+        local cf = placementCFrame(fired + 1)
+        if not cf then
+            log("Plant seeds skipped: could not find your own garden Plant_Locations.")
+            return fired
+        end
+        local pos = cf.Position
         local ok = callRemote("Plant", pos, entry.Name)
             or callRemote("Plant", entry.Name, pos)
             or callRemote("Plant", entry.Name)
