@@ -166,6 +166,15 @@ local Config = {
             Blossoming = true,
             __order = {"Spirit Sparkle", "Peppermint", "Blossoming"},
         },
+        KeepPetNames = {},
+        RuleEggName = "",
+        RuleKeepPets = "",
+        RuleSellPets = "",
+        PetRulesByEgg = {},
+        KeepMinBaseKg = 3,
+        AlwaysKeepBaseKg = 3,
+        SellUnkeptHatchedPets = false,
+        SellOnlyLevelOne = true,
         HatchInterval = 1.5,
         PlaceInterval = 8,
         MaxEggsPlaced = MAX_EGGS_PLACED,
@@ -267,12 +276,25 @@ local function setSelectionFromList(selected, list)
     return selected
 end
 
+local function selectionKey(value)
+    return tostring(value or ""):lower():gsub("[^%w]+", "")
+end
+
 local function hasSelection(selected, name)
     local order = selected and selected.__order
     if not order or #order == 0 then
         return true
     end
-    return selected[name] == true
+    if selected[name] == true then
+        return true
+    end
+    local haystack = selectionKey(name)
+    for _, selectedName in ipairs(order) do
+        if selected[selectedName] and haystack == selectionKey(selectedName) then
+            return true
+        end
+    end
+    return false
 end
 
 local function cleanItemName(name)
@@ -330,14 +352,14 @@ local function normalizeEggSelection()
     Config.Hatch.SelectedEggs = setSelectionFromList(Config.Hatch.SelectedEggs, cleaned)
 end
 
-local function mergeConfig(target, source)
+local function mergeConfig(target, source, allowUnknown)
     if type(target) ~= "table" or type(source) ~= "table" then
         return
     end
     for key, value in pairs(source) do
         if type(target[key]) == "table" and type(value) == "table" then
-            mergeConfig(target[key], value)
-        elseif target[key] ~= nil then
+            mergeConfig(target[key], value, true)
+        elseif target[key] ~= nil or allowUnknown then
             target[key] = value
         end
     end
@@ -351,7 +373,7 @@ local function loadConfig()
         return HttpService:JSONDecode(readfile(CONFIG_FILE))
     end)
     if ok and type(decoded) == "table" then
-        mergeConfig(Config, decoded)
+        mergeConfig(Config, decoded, false)
     end
 end
 
@@ -401,9 +423,9 @@ local Theme = {
 local SectionDescriptions = {
     Status = "Scan your backpack, character, and placed pets before running automations.",
     Hatch = "Choose eggs, place available egg tools, and hatch ready physical eggs.",
-    ["Keep Hatched Pets"] = "Favorite newly hatched pets when their mutation matches your keep list.",
+    ["Keep Hatched Pets"] = "Favorite newly hatched pets by egg rule, mutation, name, or base KG.",
     Pets = "Run pet feed, level, and favorite actions on selected pets. Empty selections mean all.",
-    Shops = "Choose shop groups to run. Manual run buttons are useful for testing first.",
+    Shops = "Choose shop groups to run on the buy timer.",
     ["Rewards & Packs"] = "Open selected seed packs on a timer.",
     ["Hatch Teams"] = "Seal, Koi, Bronto, and Elephant-style support teams auto-pick the highest KG matching pet found.",
     ["Pet Teams"] = "Feed uses selected pets. Leveling is manual selection. KG boost auto-requires your highest KG Elephant.",
@@ -599,6 +621,24 @@ local function normalizedName(value)
         :gsub("[^%w]+", "")
 end
 
+local function trim(value)
+    return tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function csvList(text)
+    local out = {}
+    local seen = {}
+    for value in tostring(text or ""):gmatch("[^,]+") do
+        value = trim(value)
+        local key = normalizedName(value)
+        if key ~= "" and not seen[key] then
+            seen[key] = true
+            out[#out + 1] = value
+        end
+    end
+    return out
+end
+
 local function addUnique(list, seen, value)
     value = tostring(value or "")
     if value == "" then
@@ -719,6 +759,14 @@ local function petKgFromName(name)
     return tonumber(value)
 end
 
+local function petBaseName(name)
+    return tostring(name or "")
+        :gsub("%s*%[[^%]]+%]", "")
+        :gsub("%s+", " ")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
 local function petKg(entry)
     return petKgFromName(entry and entry.Name) or petKgFromName(entry and entry.Instance and textOf(entry.Instance)) or 0
 end
@@ -790,7 +838,7 @@ local function refreshInventory()
                         bucket = "Fruits"
                     end
                     if bucket then
-                        local displayName = bucket == "Eggs" and canonicalEggName(item.Name) or item.Name
+                        local displayName = bucket == "Eggs" and canonicalEggName(item.Name) or (bucket == "Pets" and petBaseName(item.Name) or item.Name)
                         addEntry(Inventory[bucket], displayName, item)
                         if not seen[bucket .. displayName] then
                             seen[bucket .. displayName] = true
@@ -814,10 +862,11 @@ local function refreshInventory()
     local petMover = petsPhysical and petsPhysical:FindFirstChild("PetMover")
     if petMover then
         for _, pet in ipairs(petMover:GetChildren()) do
-            addEntry(Inventory.Pets, pet.Name, pet)
-            if not seen["Pets" .. pet.Name] then
-                seen["Pets" .. pet.Name] = true
-                Options.Pets[#Options.Pets + 1] = pet.Name
+            local displayName = petBaseName(pet.Name)
+            addEntry(Inventory.Pets, displayName, pet)
+            if not seen["Pets" .. displayName] then
+                seen["Pets" .. displayName] = true
+                Options.Pets[#Options.Pets + 1] = displayName
             end
             for _, mutation in ipairs(petMutationNames(pet)) do
                 if not seen["Mutations" .. mutation] then
@@ -958,25 +1007,165 @@ local function favoritePetEntry(entry)
     return callVariants("FavoriteItem", variants, 0.02)
 end
 
-local function keepMatchingNewPets(previousKeys)
-    if not Config.Hatch.KeepMutatedPets then
+local function petAge(entry)
+    local text = tostring(entry and entry.Name or "") .. " " .. tostring(entry and entry.Instance and textOf(entry.Instance) or "")
+    return tonumber(text:match("[Aa]ge%s*(%d+)")) or tonumber(text:match("%[Age%s*(%d+)%]")) or 1
+end
+
+local function petLevel(entry)
+    local instance = entry and entry.Instance
+    if instance then
+        for _, key in ipairs({"Level", "Lvl", "PetLevel"}) do
+            local ok, value = pcall(function()
+                return instance:GetAttribute(key)
+            end)
+            if ok and tonumber(value) then
+                return tonumber(value)
+            end
+            local child = instance:FindFirstChild(key)
+            if child and child:IsA("ValueBase") and tonumber(child.Value) then
+                return tonumber(child.Value)
+            end
+        end
+    end
+    local text = tostring(entry and entry.Name or "") .. " " .. tostring(instance and textOf(instance) or "")
+    return tonumber(text:match("[Ll]evel%s*(%d+)")) or tonumber(text:match("[Ll]vl%s*(%d+)")) or petAge(entry)
+end
+
+local function petBaseKg(entry)
+    local instance = entry and entry.Instance
+    if instance then
+        for _, key in ipairs({"BaseWeight", "BaseKG", "BaseKg", "BaseMass", "Weight", "KG", "Kg"}) do
+            local ok, value = pcall(function()
+                return instance:GetAttribute(key)
+            end)
+            if ok and tonumber(value) then
+                return tonumber(value)
+            end
+            local child = instance:FindFirstChild(key)
+            if child and child:IsA("ValueBase") and tonumber(child.Value) then
+                return tonumber(child.Value)
+            end
+        end
+    end
+    return petKg(entry)
+end
+
+local function petNameMatchesList(entry, names)
+    if not names or #names == 0 then
+        return false
+    end
+    local haystack = normalizedName(petBaseName(entry and entry.Name))
+    if haystack == "" then
+        haystack = normalizedName(entry and entry.Name)
+    end
+    for _, name in ipairs(names) do
+        local needle = normalizedName(name)
+        if needle ~= "" and (haystack == needle or haystack:find(needle, 1, true)) then
+            return name
+        end
+    end
+    return false
+end
+
+local function petNameSelectedForKeep(entry)
+    return petNameMatchesList(entry, selectedNames(Config.Hatch.KeepPetNames))
+end
+
+local function ensureEggPetRules()
+    if type(Config.Hatch.PetRulesByEgg) ~= "table" then
+        Config.Hatch.PetRulesByEgg = {}
+    end
+    return Config.Hatch.PetRulesByEgg
+end
+
+local function setEggPetRule()
+    local eggName = canonicalEggName(Config.Hatch.RuleEggName)
+    if eggName == "" then
         return
     end
+    local keepPets = csvList(Config.Hatch.RuleKeepPets)
+    local sellPets = csvList(Config.Hatch.RuleSellPets)
+    ensureEggPetRules()[eggName] = {
+        Keep = keepPets,
+        Sell = sellPets,
+    }
+end
+
+local function eggPetRule(eggName)
+    local rules = ensureEggPetRules()
+    local canonical = canonicalEggName(eggName)
+    return rules[canonical] or rules[tostring(eggName or "")]
+end
+
+local function sellPetEntry(entry)
+    local variants = {}
+    if entry.Uuid then
+        variants[#variants + 1] = {entry.Uuid}
+        variants[#variants + 1] = {entry.Uuid, true}
+    end
+    if entry.Instance then
+        variants[#variants + 1] = {entry.Instance}
+        variants[#variants + 1] = {entry.Instance, true}
+    end
+    local fired = callVariants("SellPet", variants, 0.03)
+    if fired == 0 then
+        fired = callVariants("RemoveItem", variants, 0.03)
+    end
+    return fired
+end
+
+local function processNewlyHatchedPets(previousKeys, eggName)
     refreshInventory()
     local kept = 0
+    local sold = 0
+    local rule = eggPetRule(eggName) or {}
+    local keepNames = rule.Keep or rule.keep or {}
+    local sellNames = rule.Sell or rule.sell or {}
+    local hasSellRules = type(sellNames) == "table" and #sellNames > 0
     for _, entry in ipairs(Inventory.Pets or {}) do
         if not previousKeys[petEntryKey(entry)] then
             local mutations = petMutationNames(entry.Instance)
             local match = mutationMatchesKeep(mutations)
-            if match then
+            local baseKg = petBaseKg(entry)
+            local age = petAge(entry)
+            local level = petLevel(entry)
+            local ruleKeepName = petNameMatchesList(entry, keepNames)
+            local ruleSellName = petNameMatchesList(entry, sellNames)
+            local globalKeepName = petNameSelectedForKeep(entry)
+            local keepReason
+            if ruleKeepName then
+                keepReason = "egg rule " .. tostring(ruleKeepName)
+            elseif globalKeepName then
+                keepReason = "selected pet " .. tostring(globalKeepName)
+            elseif baseKg >= (tonumber(Config.Hatch.AlwaysKeepBaseKg) or 3) then
+                keepReason = ("base %.2fkg"):format(baseKg)
+            elseif age <= 1 and baseKg >= (tonumber(Config.Hatch.KeepMinBaseKg) or 3) then
+                keepReason = ("age 1 base %.2fkg"):format(baseKg)
+            elseif Config.Hatch.KeepMutatedPets and match then
+                keepReason = "mutation " .. match
+            end
+
+            if keepReason then
                 favoritePetEntry(entry)
                 kept += 1
-                log(("Kept hatched pet %s with mutation %s."):format(entry.Name, match))
+                log(("Kept hatched pet %s from %s (%s)."):format(entry.Name, tostring(eggName or "egg"), keepReason))
+            elseif Config.Hatch.SellUnkeptHatchedPets and ((not hasSellRules) or ruleSellName) then
+                if (not Config.Hatch.SellOnlyLevelOne) or level <= 1 then
+                    local fired = sellPetEntry(entry)
+                    if fired > 0 then
+                        sold += 1
+                        local reason = ruleSellName and ("sell rule " .. tostring(ruleSellName)) or "unkept hatch"
+                        log(("Sold newly hatched pet %s from %s (%s)."):format(entry.Name, tostring(eggName or "egg"), reason))
+                    end
+                else
+                    log(("Skipped selling %s because it is level %d."):format(entry.Name, level))
+                end
             end
         end
     end
-    if kept == 0 then
-        log("Keep mutated pets: no matching newly hatched pet found.")
+    if kept == 0 and sold == 0 then
+        log("Hatch results: no new pet matched keep/sell rules.")
     end
 end
 
@@ -1778,7 +1967,7 @@ function Actions.HatchOnce()
     log(fired > 0 and ("Hatch sent " .. fired .. " request(s) for " .. name .. ".") or "Hatch skipped: PetEggService missing.")
     if fired > 0 then
         task.delay(1.5, function()
-            keepMatchingNewPets(previousPetKeys)
+            processNewlyHatchedPets(previousPetKeys, name)
         end)
     end
     return fired > 0
@@ -2468,7 +2657,7 @@ do
     guideText.BackgroundTransparency = 1
     guideText.Size = UDim2.new(1, 0, 0, 72)
     guideText.Font = Enum.Font.Gotham
-    guideText.Text = "Empty selectors mean all available items. Refresh Inventory after joining, hatching, buying, or moving tools. Test with one-time buttons before enabling loops."
+    guideText.Text = "Empty selectors mean all available items. Refresh Inventory after joining, hatching, buying, or moving tools."
     guideText.TextColor3 = Theme.Muted
     guideText.TextSize = 12
     guideText.TextWrapped = true
@@ -2501,6 +2690,24 @@ do
     local keep = section(hatch, "Keep Hatched Pets")
     toggle(keep, "Keep Matching Mutations", Config.Hatch.KeepMutatedPets, function(v) Config.Hatch.KeepMutatedPets = v end)
     multiselect(keep, "Keep Mutations", function() return Options.Mutations end, Config.Hatch.KeepMutations, nil)
+    multiselect(keep, "Keep Pet Names", function() return Options.Pets end, Config.Hatch.KeepPetNames, nil)
+    input(keep, "Egg Rule Name", Config.Hatch.RuleEggName, function(v)
+        Config.Hatch.RuleEggName = canonicalEggName(v)
+        setEggPetRule()
+    end)
+    input(keep, "Keep Pets For Egg", Config.Hatch.RuleKeepPets, function(v)
+        Config.Hatch.RuleKeepPets = v
+        setEggPetRule()
+    end)
+    input(keep, "Sell Pets For Egg", Config.Hatch.RuleSellPets, function(v)
+        Config.Hatch.RuleSellPets = v
+        setEggPetRule()
+    end)
+    input(keep, "Min Age 1 Base KG", Config.Hatch.KeepMinBaseKg, function(v) Config.Hatch.KeepMinBaseKg = math.max(0, tonumber(v) or 3) end)
+    input(keep, "Always Keep Base KG", Config.Hatch.AlwaysKeepBaseKg, function(v) Config.Hatch.AlwaysKeepBaseKg = math.max(0, tonumber(v) or 3) end)
+    toggle(keep, "Sell Unkept New Hatches", Config.Hatch.SellUnkeptHatchedPets, function(v) Config.Hatch.SellUnkeptHatchedPets = v end)
+    toggle(keep, "Only Sell Level 1", Config.Hatch.SellOnlyLevelOne, function(v) Config.Hatch.SellOnlyLevelOne = v end)
+
     local teams = section(hatch, "Hatch Teams")
     multiselect(teams, "Egg Hatch Reduction Team", function() return Options.Pets end, Config.Hatch.HatchReductionTeam, nil)
     multiselect(teams, "Seal Team", function() return Options.Pets end, Config.Hatch.SealTeam, nil)
