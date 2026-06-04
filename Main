@@ -479,7 +479,7 @@ local function textOf(instance)
 end
 
 local function firstUuid(instance)
-    local names = {"UUID", "Uuid", "PetUUID", "PetUuid", "ItemUUID", "ItemUuid"}
+    local names = {"UUID", "Uuid", "PetUUID", "PetUuid", "ItemUUID", "ItemUuid", "EggUUID", "EggUuid"}
     for _, name in ipairs(names) do
         local ok, value = pcall(function()
             return instance:GetAttribute(name)
@@ -629,7 +629,46 @@ local function selectedEntries(bucket, selected)
     return out
 end
 
+local function eggPlacementArea()
+    local direct = Workspace:FindFirstChild("Farm")
+    if direct then
+        for _, descendant in ipairs(direct:GetDescendants()) do
+            if descendant.Name == "Can_Plant" and descendant:IsA("BasePart") then
+                return descendant
+            end
+        end
+    end
+
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local rootPos = root and root.Position
+    local best
+    local bestDistance = math.huge
+    for _, descendant in ipairs(Workspace:GetDescendants()) do
+        if descendant.Name == "Can_Plant" and descendant:IsA("BasePart") then
+            local distance = rootPos and (descendant.Position - rootPos).Magnitude or 0
+            if distance < bestDistance then
+                best = descendant
+                bestDistance = distance
+            end
+        end
+    end
+    return best
+end
+
 local function placementCFrame(index)
+    local area = eggPlacementArea()
+    if area then
+        local columns = 4
+        local spacing = 4
+        local col = (index - 1) % columns
+        local rowIndex = math.floor((index - 1) / columns)
+        local width = math.max(0, area.Size.X - 6)
+        local depth = math.max(0, area.Size.Z - 6)
+        local x = math.clamp((col - (columns - 1) / 2) * spacing, -width / 2, width / 2)
+        local z = math.clamp((rowIndex - 1) * spacing, -depth / 2, depth / 2)
+        return area.CFrame * CFrame.new(x, 0.5, z)
+    end
+
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local base = root and root.CFrame or CFrame.new()
     local offset = Vector3.new(((index - 1) % 4) * 3, 0, math.floor((index - 1) / 4) * 3)
@@ -739,71 +778,254 @@ function Actions.OpenSeedPacksOnce()
     log(("Seed pack opener sent %d request(s)."):format(fired))
 end
 
-local function eggReady(egg)
-    local lower = textOf(egg)
-    if lower:find("ready", 1, true) or lower:find("canhatch", 1, true) then
-        return true
-    end
-    local now = os.time()
-    for _, key in ipairs({"HatchAt", "ReadyAt", "HatchReadyAt"}) do
+local function normalizedEggText(value)
+    return tostring(value or "")
+        :lower()
+        :gsub("%b[]", " ")
+        :gsub("%b()", " ")
+        :gsub("[_%-]+", " ")
+        :gsub("%s+", " ")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
+local function eggDisplayName(egg)
+    for _, key in ipairs({"EggName", "PetEggName", "EggType", "Type", "DisplayName", "ItemName"}) do
         local ok, value = pcall(function()
             return egg:GetAttribute(key)
         end)
-        if ok and tonumber(value) and tonumber(value) <= now then
+        if ok and value and tostring(value) ~= "" then
+            return tostring(value)
+        end
+        local child = egg:FindFirstChild(key)
+        if child and child:IsA("ValueBase") and child.Value and tostring(child.Value) ~= "" then
+            return tostring(child.Value)
+        end
+    end
+    return egg.Name
+end
+
+local function eggMatchesSelection(egg, selected)
+    local names = selectedNames(selected)
+    if #names == 0 then
+        return true
+    end
+
+    local haystack = normalizedEggText(egg.Name .. " " .. eggDisplayName(egg) .. " " .. textOf(egg))
+    for _, selectedName in ipairs(names) do
+        local needle = normalizedEggText(selectedName)
+        if needle ~= "" and haystack:find(needle, 1, true) then
             return true
         end
     end
     return false
 end
 
-local function findEgg()
+local function eggReady(egg)
+    local lower = textOf(egg)
+    if lower:find("can hatch", 1, true)
+        or lower:find("canhatch true", 1, true)
+        or lower:find("hatchready true", 1, true)
+        or lower:find("ready true", 1, true)
+        or lower:find("ready!", 1, true)
+    then
+        return true
+    end
+
+    for _, key in ipairs({"Ready", "CanHatch", "HatchReady", "IsReady"}) do
+        local ok, value = pcall(function()
+            return egg:GetAttribute(key)
+        end)
+        if ok and value == true then
+            return true
+        end
+        local child = egg:FindFirstChild(key)
+        if child and child:IsA("BoolValue") and child.Value == true then
+            return true
+        end
+    end
+
+    local now = os.time()
+    for _, key in ipairs({"HatchAt", "ReadyAt", "HatchReadyAt", "FinishTime", "EndTime"}) do
+        local ok, value = pcall(function()
+            return egg:GetAttribute(key)
+        end)
+        if ok and tonumber(value) and tonumber(value) <= now then
+            return true
+        end
+        local child = egg:FindFirstChild(key)
+        if child and child:IsA("ValueBase") and tonumber(child.Value) and tonumber(child.Value) <= now then
+            return true
+        end
+    end
+
+    for _, key in ipairs({"TimeLeft", "TimeRemaining", "ReadyTime", "HatchTime", "HatchTimeLeft", "HatchTimeRemaining", "Remaining", "Cooldown"}) do
+        local ok, value = pcall(function()
+            return egg:GetAttribute(key)
+        end)
+        if ok and tonumber(value) and tonumber(value) <= 0 then
+            return true
+        end
+        local child = egg:FindFirstChild(key)
+        if child and child:IsA("ValueBase") and tonumber(child.Value) and tonumber(child.Value) <= 0 then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function eggWorldPosition(egg)
+    if egg:IsA("BasePart") then
+        return egg.Position
+    end
+    if egg:IsA("Model") then
+        local ok, cf = pcall(function()
+            return egg:GetPivot()
+        end)
+        if ok then
+            return cf.Position
+        end
+        local part = egg.PrimaryPart or egg:FindFirstChildWhichIsA("BasePart", true)
+        return part and part.Position
+    end
+    local part = egg:FindFirstChildWhichIsA("BasePart", true)
+    return part and part.Position
+end
+
+local function eggRoots()
+    local roots = {}
+    local names = {
+        "Farm", "Farms", "Plots", "PlayerFarm", "PlayerFarms",
+        "PetEggs", "Eggs", "EggModels", "Objects_Physical",
+    }
+    for _, name in ipairs(names) do
+        local found = Workspace:FindFirstChild(name)
+        if found then
+            roots[#roots + 1] = found
+        end
+    end
+    if #roots == 0 then
+        roots[1] = Workspace
+    end
+    return roots
+end
+
+local function findReadyEggs()
     local selected = Config.Hatch.SelectedEggs
-    for _, descendant in ipairs(Workspace:GetDescendants()) do
-        if descendant:IsA("Model") or descendant:IsA("BasePart") then
-            local name = descendant.Name
-            local lower = name:lower()
-            if lower:find("egg", 1, true) and hasSelection(selected, name) and eggReady(descendant) then
-                return descendant
+    local found = {}
+    local seen = {}
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local rootPos = root and root.Position
+
+    for _, searchRoot in ipairs(eggRoots()) do
+        for _, descendant in ipairs(searchRoot:GetDescendants()) do
+            if not seen[descendant]
+                and (descendant:IsA("Model") or descendant:IsA("BasePart") or descendant:IsA("Folder"))
+            then
+                seen[descendant] = true
+                local lower = normalizedEggText(descendant.Name .. " " .. textOf(descendant))
+                if lower:find("egg", 1, true)
+                    and eggMatchesSelection(descendant, selected)
+                    and eggReady(descendant)
+                then
+                    local pos = eggWorldPosition(descendant)
+                    local distance = (rootPos and pos) and (pos - rootPos).Magnitude or 0
+                    found[#found + 1] = {
+                        Egg = descendant,
+                        Distance = distance,
+                    }
+                end
             end
         end
     end
-    return nil
+
+    table.sort(found, function(a, b)
+        return a.Distance < b.Distance
+    end)
+    return found
+end
+
+local function countPhysicalEggs()
+    local count = 0
+    local seen = {}
+    for _, searchRoot in ipairs(eggRoots()) do
+        for _, descendant in ipairs(searchRoot:GetDescendants()) do
+            if not seen[descendant]
+                and (descendant:IsA("Model") or descendant:IsA("Folder"))
+            then
+                seen[descendant] = true
+                local lower = normalizedEggText(descendant.Name .. " " .. textOf(descendant))
+                if lower:find("egg", 1, true) then
+                    count += 1
+                end
+            end
+        end
+    end
+    return count
+end
+
+local function hatchEgg(egg)
+    local ok = callRemote("PetEggService", "HatchPet", egg)
+    return ok and 1 or 0
 end
 
 function Actions.HatchOnce()
-    local egg = findEgg()
-    if not egg then
+    local eggs = findReadyEggs()
+    if #eggs == 0 then
         log("Hatch skipped: no ready selected egg found.")
         return false
     end
-    local ok = callRemote("PetEggService", "HatchPet", egg)
-    log(ok and ("HatchPet sent for " .. egg.Name) or "Hatch skipped: PetEggService missing.")
+
+    local fired = hatchEgg(eggs[1].Egg)
+    local name = eggDisplayName(eggs[1].Egg)
+    log(fired > 0 and ("Hatch sent " .. fired .. " request(s) for " .. name .. ".") or "Hatch skipped: PetEggService missing.")
     task.delay(1, refreshInventory)
-    return ok
+    return fired > 0
 end
 
 function Actions.PlaceEggsOnce()
     local count = 0
-    local maxEggs = tonumber(Config.Hatch.MaxEggsPlaced) or MAX_EGGS_PLACED
+    local maxEggs = math.max(1, tonumber(Config.Hatch.MaxEggsPlaced) or MAX_EGGS_PLACED)
+    local alreadyPlaced = countPhysicalEggs()
+    local remainingSlots = math.max(0, maxEggs - alreadyPlaced)
+    if remainingSlots <= 0 then
+        log(("Place eggs skipped: already at %d/%d physical egg(s)."):format(alreadyPlaced, maxEggs))
+        return 0
+    end
+
     for _, entry in ipairs(selectedEntries("Eggs", Config.Hatch.SelectedEggs)) do
-        if count >= maxEggs then
+        if count >= remainingSlots then
             break
         end
+
         equip(entry.Instance)
-        task.wait(0.05)
-        local cf = placementCFrame(count + 1)
-        local ok = callRemote("PetEggService", "PlaceEgg", entry.Name, cf)
-            or callRemote("PetEggService", "Place", entry.Name, cf)
-            or callRemote("PetEggService", entry.Name, cf)
-        if ok then
+        task.wait(0.08)
+        local cf = placementCFrame(alreadyPlaced + count + 1)
+        local pos = cf.Position
+
+        local before = countPhysicalEggs()
+        local placed = callRemote("PetEggService", "CreateEgg", pos)
+        task.wait(0.12)
+        if countPhysicalEggs() <= before then
+            placed = callRemote("PetEggService", "PlaceEgg", pos)
+            task.wait(0.12)
+        end
+
+        if placed and countPhysicalEggs() > before then
             count += 1
         elseif entry.Instance and entry.Instance:IsA("Tool") then
-            pcall(function()
+            local activated = pcall(function()
                 entry.Instance:Activate()
             end)
+            if activated then
+                count += 1
+            end
         end
     end
-    log(("Place eggs attempted %d egg(s)."):format(count))
+    log(("Placed %d egg(s), now at about %d/%d."):format(count, alreadyPlaced + count, maxEggs))
+    task.delay(1, refreshInventory)
+    return count
 end
 
 function Actions.FeedPetsOnce()
