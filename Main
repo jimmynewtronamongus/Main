@@ -169,15 +169,22 @@ local Config = {
         HatchInterval = 1.5,
         PlaceInterval = 8,
         MaxEggsPlaced = MAX_EGGS_PLACED,
+        HatchTeam = {},
+        SealTeam = {},
     },
     Pets = {
         AutoFeed = false,
         AutoLevel = false,
+        AutoKgBoost = false,
         AutoFavorite = false,
         FeedInterval = 2,
         LevelInterval = 5,
+        KgBoostInterval = 5,
         FavoriteMode = "Favorite",
         SelectedPets = {},
+        FeedTeam = {},
+        LevelTeam = {},
+        KgBoostTeam = {},
     },
     Shops = {
         AutoBuy = false,
@@ -185,8 +192,6 @@ local Config = {
         SelectedShops = {},
     },
     Rewards = {
-        AutoClaim = false,
-        ClaimInterval = 30,
         AutoOpenPacks = false,
         PackInterval = 12,
         SelectedPacks = {},
@@ -397,7 +402,9 @@ local SectionDescriptions = {
     ["Keep Hatched Pets"] = "Favorite newly hatched pets when their mutation matches your keep list.",
     Pets = "Run pet feed, level, and favorite actions on selected pets. Empty selections mean all.",
     Shops = "Choose shop groups to run. Manual run buttons are useful for testing first.",
-    ["Rewards & Packs"] = "Claim eligible reward tracks and open selected seed packs.",
+    ["Rewards & Packs"] = "Open selected seed packs on a timer.",
+    ["Hatch Teams"] = "Choose pet groups to use before hatching ready eggs.",
+    ["Pet Teams"] = "Choose separate groups for feeding, leveling, and KG boost workflows.",
     Utility = "Fruit, planting, rebirth, visual cleanup, and general helpers.",
     Activity = "Recent actions, missing remotes, and refresh status.",
 }
@@ -671,6 +678,39 @@ local function sortOptions(list)
     end)
 end
 
+local function isPetItem(instance)
+    local lowerName = tostring(instance and instance.Name or ""):lower()
+    if lowerName:find("egg", 1, true)
+        or lowerName:find("seed", 1, true)
+        or lowerName:find("pack", 1, true)
+        or lowerName:find("sprinkler", 1, true)
+        or lowerName:find("trowel", 1, true)
+        or lowerName:find("wrench", 1, true)
+        or lowerName:find("tool", 1, true)
+        or lowerName:find("fruit", 1, true)
+    then
+        return false
+    end
+
+    local lower = textOf(instance)
+    if lower:find("pettool", 1, true)
+        or lower:find("petuuid", 1, true)
+        or lower:find("age ", 1, true)
+        or lower:find("[age", 1, true)
+        or lower:find(" kg", 1, true)
+    then
+        return true
+    end
+
+    for _, child in ipairs(instance:GetChildren()) do
+        local childName = child.Name:lower()
+        if childName:find("pet", 1, true) and (child:IsA("LocalScript") or child:IsA("Script") or child:IsA("ModuleScript")) then
+            return true
+        end
+    end
+    return false
+end
+
 local function refreshInventory()
     for key in pairs(Inventory) do
         Inventory[key] = {}
@@ -695,10 +735,10 @@ local function refreshInventory()
                         bucket = "Eggs"
                     elseif lower:find("seed", 1, true) then
                         bucket = "Seeds"
+                    elseif isPetItem(item) then
+                        bucket = "Pets"
                     elseif lower:find("fruit", 1, true) or lower:find("kg", 1, true) then
                         bucket = "Fruits"
-                    elseif lower:find("pet", 1, true) or firstUuid(item) then
-                        bucket = "Pets"
                     end
                     if bucket then
                         local displayName = bucket == "Eggs" and canonicalEggName(item.Name) or item.Name
@@ -1648,6 +1688,22 @@ function updateEggEsp()
     end
 end
 
+local function runPetTeam(selected, label)
+    local fired = 0
+    for _, entry in ipairs(selectedEntries("Pets", selected)) do
+        if entry.Uuid then
+            local ok = callRemote("ActivePetService", "Feed", entry.Uuid)
+                or callRemote("PetBoostService", "Level", entry.Uuid)
+                or callRemote("PetBoostService", "Feed", entry.Uuid)
+            if ok then fired += 1 end
+        end
+    end
+    if fired > 0 then
+        log(("%s sent %d pet request(s)."):format(label, fired))
+    end
+    return fired
+end
+
 function Actions.HatchOnce()
     local eggs = findReadyEggs()
     if #eggs == 0 then
@@ -1662,6 +1718,9 @@ function Actions.HatchOnce()
     end
 
     local previousPetKeys = capturePetKeys()
+    runPetTeam(Config.Hatch.HatchTeam, "Egg hatch team")
+    runPetTeam(Config.Hatch.SealTeam, "Seal hatch team")
+    task.wait(0.15)
     local fired = hatchEgg(eggs[1].Egg)
     local name = eggDisplayName(eggs[1].Egg)
     log(fired > 0 and ("Hatch sent " .. fired .. " request(s) for " .. name .. ".") or "Hatch skipped: PetEggService missing.")
@@ -1723,7 +1782,8 @@ end
 
 function Actions.FeedPetsOnce()
     local fired = 0
-    for _, entry in ipairs(selectedEntries("Pets", Config.Pets.SelectedPets)) do
+    local selected = #(selectedNames(Config.Pets.FeedTeam)) > 0 and Config.Pets.FeedTeam or Config.Pets.SelectedPets
+    for _, entry in ipairs(selectedEntries("Pets", selected)) do
         local uuid = entry.Uuid
         if uuid then
             local ok = callRemote("ActivePetService", "Feed", uuid)
@@ -1736,7 +1796,8 @@ end
 
 function Actions.LevelPetsOnce()
     local fired = 0
-    for _, entry in ipairs(selectedEntries("Pets", Config.Pets.SelectedPets)) do
+    local selected = #(selectedNames(Config.Pets.LevelTeam)) > 0 and Config.Pets.LevelTeam or Config.Pets.SelectedPets
+    for _, entry in ipairs(selectedEntries("Pets", selected)) do
         local uuid = entry.Uuid
         if uuid then
             local ok = callRemote("PetBoostService", "Level", uuid)
@@ -1746,6 +1807,22 @@ function Actions.LevelPetsOnce()
         end
     end
     log(("Level pets sent %d request(s)."):format(fired))
+end
+
+function Actions.KgBoostPetsOnce()
+    local fired = 0
+    local selected = #(selectedNames(Config.Pets.KgBoostTeam)) > 0 and Config.Pets.KgBoostTeam or Config.Pets.SelectedPets
+    for _, entry in ipairs(selectedEntries("Pets", selected)) do
+        local uuid = entry.Uuid
+        if uuid then
+            local ok = callRemote("PetBoostService", "Weight", uuid)
+                or callRemote("PetBoostService", "KG", uuid)
+                or callRemote("PetBoostService", "Size", uuid)
+                or callRemote("PetBoostService", "Boost", uuid)
+            if ok then fired += 1 end
+        end
+    end
+    log(("KG boost pets sent %d request(s)."):format(fired))
 end
 
 function Actions.FavoritePetsOnce()
@@ -2304,7 +2381,7 @@ navButton("Dashboard", 1, "Overview")
 navButton("Hatch", 2, "Eggs")
 navButton("Pets", 3, "Feed / level")
 navButton("Shops", 4, "Buying")
-navButton("Rewards", 5, "Claims / packs")
+navButton("Rewards", 5, "Seed packs")
 navButton("Utility", 6, "Farm tools")
 navButton("Logs", 7, "Output")
 
@@ -2321,12 +2398,6 @@ do
     summaryLabel.TextXAlignment = Enum.TextXAlignment.Left
     summaryLabel.Parent = s
     button(s, "Refresh Inventory", refreshInventory)
-
-    local quick = section(dashboard, "Quick Actions")
-    button(quick, "Hatch Ready Egg", Actions.HatchOnce)
-    button(quick, "Buy Selected Shops", Actions.AutoBuyOnce)
-    button(quick, "Claim Rewards", Actions.ClaimRewardsOnce)
-    button(quick, "Open Seed Packs", Actions.OpenSeedPacksOnce)
 
     local guide = section(dashboard, "How Selection Works")
     local guideText = Instance.new("TextLabel")
@@ -2366,55 +2437,27 @@ do
     local keep = section(hatch, "Keep Hatched Pets")
     toggle(keep, "Keep Matching Mutations", Config.Hatch.KeepMutatedPets, function(v) Config.Hatch.KeepMutatedPets = v end)
     multiselect(keep, "Keep Mutations", function() return Options.Mutations end, Config.Hatch.KeepMutations, nil)
-    input(keep, "Custom Mutations", table.concat(selectedNames(Config.Hatch.KeepMutations), ", "), function(text)
-        local values = {}
-        for value in tostring(text or ""):gmatch("[^,]+") do
-            values[#values + 1] = value
-        end
-        Config.Hatch.KeepMutations = setSelectionFromList(Config.Hatch.KeepMutations, values)
-        for _, mutation in ipairs(values) do
-            mutation = tostring(mutation or ""):gsub("^%s+", ""):gsub("%s+$", "")
-            if mutation ~= "" then
-                local exists = false
-                for _, option in ipairs(Options.Mutations) do
-                    if normalizedName(option) == normalizedName(mutation) then
-                        exists = true
-                        break
-                    end
-                end
-                if not exists then
-                    Options.Mutations[#Options.Mutations + 1] = mutation
-                end
-            end
-        end
-        for _, refresh in pairs(refreshers) do
-            refresh()
-        end
-    end)
-
-    local manual = section(hatch, "Manual Runs")
-    button(manual, "Hatch Once", Actions.HatchOnce)
-    button(manual, "Place Eggs Once", Actions.PlaceEggsOnce)
-    button(manual, "Log Egg Remote Status", Actions.LogEggRemoteStatus)
+    local teams = section(hatch, "Hatch Teams")
+    multiselect(teams, "Egg Hatch Team", function() return Options.Pets end, Config.Hatch.HatchTeam, nil)
+    multiselect(teams, "Seal Hatch Team", function() return Options.Pets end, Config.Hatch.SealTeam, nil)
 end
 
 do
     local auto = section(pets, "Pets")
     toggle(auto, "Auto Feed", Config.Pets.AutoFeed, function(v) Config.Pets.AutoFeed = v end)
     toggle(auto, "Auto Level", Config.Pets.AutoLevel, function(v) Config.Pets.AutoLevel = v end)
+    toggle(auto, "Auto KG Boost", Config.Pets.AutoKgBoost, function(v) Config.Pets.AutoKgBoost = v end)
     toggle(auto, "Auto Favorite", Config.Pets.AutoFavorite, function(v) Config.Pets.AutoFavorite = v end)
 
     local timing = section(pets, "Pet Timing")
     input(timing, "Feed Interval", Config.Pets.FeedInterval, function(v) Config.Pets.FeedInterval = math.max(0.5, tonumber(v) or 2) end)
     input(timing, "Level Interval", Config.Pets.LevelInterval, function(v) Config.Pets.LevelInterval = math.max(1, tonumber(v) or 5) end)
+    input(timing, "KG Boost Interval", Config.Pets.KgBoostInterval, function(v) Config.Pets.KgBoostInterval = math.max(1, tonumber(v) or 5) end)
 
-    local selected = section(pets, "Pet Selection")
-    multiselect(selected, "Selected Pets", function() return Options.Pets end, Config.Pets.SelectedPets, nil)
-
-    local manual = section(pets, "Manual Runs")
-    button(manual, "Feed Once", Actions.FeedPetsOnce)
-    button(manual, "Level Once", Actions.LevelPetsOnce)
-    button(manual, "Favorite Once", Actions.FavoritePetsOnce)
+    local teams = section(pets, "Pet Teams")
+    multiselect(teams, "Feed Team", function() return Options.Pets end, Config.Pets.FeedTeam, nil)
+    multiselect(teams, "Leveling Team", function() return Options.Pets end, Config.Pets.LevelTeam, nil)
+    multiselect(teams, "KG Boost Team", function() return Options.Pets end, Config.Pets.KgBoostTeam, nil)
 end
 
 do
@@ -2425,23 +2468,16 @@ do
     local selected = section(shops, "Shop Selection")
     multiselect(selected, "Selected Shops", function() return Options.Shops end, Config.Shops.SelectedShops, nil)
 
-    local manual = section(shops, "Manual Runs")
-    button(manual, "Buy Selected Shops Once", Actions.AutoBuyOnce)
 end
 
 do
     local auto = section(rewards, "Rewards & Packs")
-    toggle(auto, "Auto Claim Rewards", Config.Rewards.AutoClaim, function(v) Config.Rewards.AutoClaim = v end)
-    input(auto, "Claim Interval", Config.Rewards.ClaimInterval, function(v) Config.Rewards.ClaimInterval = math.max(5, tonumber(v) or 30) end)
     toggle(auto, "Auto Open Seed Packs", Config.Rewards.AutoOpenPacks, function(v) Config.Rewards.AutoOpenPacks = v end)
     input(auto, "Pack Interval", Config.Rewards.PackInterval, function(v) Config.Rewards.PackInterval = math.max(3, tonumber(v) or 12) end)
 
     local selected = section(rewards, "Pack Selection")
     multiselect(selected, "Selected Seed Packs", function() return Options.SeedPacks end, Config.Rewards.SelectedPacks, nil)
 
-    local manual = section(rewards, "Manual Runs")
-    button(manual, "Claim Rewards Once", Actions.ClaimRewardsOnce)
-    button(manual, "Open Seed Packs Once", Actions.OpenSeedPacksOnce)
 end
 
 do
@@ -2463,11 +2499,6 @@ do
     toggle(visual, "Anti Lag", Config.Utility.AntiLag, function(v) Config.Utility.AntiLag = v; Actions.SetAntiLag(v) end)
     toggle(visual, "Remove Textures", Config.Utility.RemoveTextures, function(v) Config.Utility.RemoveTextures = v; Actions.SetTexturesRemoved(v) end)
 
-    local manual = section(utility, "Manual Runs")
-    button(manual, "Collect Fruit Once", Actions.CollectFruitOnce)
-    button(manual, "Sell Fruit Once", Actions.SellFruitOnce)
-    button(manual, "Plant Seeds Once", Actions.PlantSeedsOnce)
-    button(manual, "Rebirth Once", Actions.RebirthOnce)
 end
 
 do
@@ -2566,14 +2597,14 @@ task.spawn(function()
         if Config.Pets.AutoLevel then
             tickAction("Level", tonumber(Config.Pets.LevelInterval) or 5, "Level", Actions.LevelPetsOnce)
         end
+        if Config.Pets.AutoKgBoost then
+            tickAction("KgBoost", tonumber(Config.Pets.KgBoostInterval) or 5, "KgBoost", Actions.KgBoostPetsOnce)
+        end
         if Config.Pets.AutoFavorite then
             tickAction("Favorite", 6, "Favorite", Actions.FavoritePetsOnce)
         end
         if Config.Shops.AutoBuy then
             tickAction("Buy", tonumber(Config.Shops.BuyInterval) or 3, "Buy", Actions.AutoBuyOnce)
-        end
-        if Config.Rewards.AutoClaim then
-            tickAction("Claim", tonumber(Config.Rewards.ClaimInterval) or 30, "Claim", Actions.ClaimRewardsOnce)
         end
         if Config.Rewards.AutoOpenPacks then
             tickAction("Packs", tonumber(Config.Rewards.PackInterval) or 12, "Packs", Actions.OpenSeedPacksOnce)
@@ -2601,9 +2632,9 @@ task.spawn(function()
         if Config.Hatch.AutoPlaceEggs then active += 1 end
         if Config.Pets.AutoFeed then active += 1 end
         if Config.Pets.AutoLevel then active += 1 end
+        if Config.Pets.AutoKgBoost then active += 1 end
         if Config.Pets.AutoFavorite then active += 1 end
         if Config.Shops.AutoBuy then active += 1 end
-        if Config.Rewards.AutoClaim then active += 1 end
         if Config.Rewards.AutoOpenPacks then active += 1 end
         if Config.Utility.AutoCollectFruit then active += 1 end
         if Config.Utility.AutoSellFruit then active += 1 end
