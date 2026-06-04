@@ -287,17 +287,30 @@ screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = guiParent()
 
 local Theme = {
-    Background = Color3.fromRGB(8, 12, 16),
-    Window = Color3.fromRGB(16, 22, 29),
-    Panel = Color3.fromRGB(22, 30, 39),
-    Panel2 = Color3.fromRGB(28, 38, 49),
-    Input = Color3.fromRGB(12, 18, 24),
-    Text = Color3.fromRGB(232, 238, 241),
-    Muted = Color3.fromRGB(148, 162, 171),
-    Accent = Color3.fromRGB(113, 211, 167),
-    Accent2 = Color3.fromRGB(245, 198, 98),
-    Danger = Color3.fromRGB(238, 111, 111),
-    Stroke = Color3.fromRGB(51, 66, 78),
+    Background = Color3.fromRGB(9, 12, 14),
+    Window = Color3.fromRGB(17, 22, 25),
+    Topbar = Color3.fromRGB(23, 30, 34),
+    Sidebar = Color3.fromRGB(13, 18, 21),
+    Panel = Color3.fromRGB(24, 31, 35),
+    Panel2 = Color3.fromRGB(31, 39, 44),
+    Input = Color3.fromRGB(12, 17, 19),
+    Text = Color3.fromRGB(233, 239, 237),
+    Muted = Color3.fromRGB(151, 165, 163),
+    Accent = Color3.fromRGB(119, 220, 164),
+    Accent2 = Color3.fromRGB(245, 201, 103),
+    Danger = Color3.fromRGB(238, 112, 112),
+    Stroke = Color3.fromRGB(58, 72, 75),
+    StrokeSoft = Color3.fromRGB(42, 53, 56),
+}
+
+local SectionDescriptions = {
+    Status = "Scan your backpack, character, and placed pets before running automations.",
+    Hatch = "Choose eggs, place available egg tools, and hatch ready physical eggs.",
+    Pets = "Run pet feed, level, and favorite actions on selected pets. Empty selections mean all.",
+    Shops = "Choose shop groups to run. Manual run buttons are useful for testing first.",
+    ["Rewards & Packs"] = "Claim eligible reward tracks and open selected seed packs.",
+    Utility = "Fruit, planting, rebirth, visual cleanup, and general helpers.",
+    Activity = "Recent actions, missing remotes, and refresh status.",
 }
 
 local pages = {}
@@ -894,47 +907,60 @@ local window = Instance.new("Frame")
 window.Name = "Window"
 window.AnchorPoint = Vector2.new(0.5, 0.5)
 window.Position = UDim2.fromScale(0.5, 0.5)
-window.Size = UDim2.fromOffset(980, 640)
+window.Size = UDim2.fromOffset(1080, 690)
 window.BackgroundColor3 = Theme.Window
 window.BorderSizePixel = 0
 window.Parent = screenGui
-corner(window, 10)
+corner(window, 12)
 stroke(window)
 
 local topbar = Instance.new("Frame")
 topbar.Name = "Topbar"
-topbar.Size = UDim2.new(1, 0, 0, 46)
-topbar.BackgroundColor3 = Theme.Panel
+topbar.Size = UDim2.new(1, 0, 0, 64)
+topbar.BackgroundColor3 = Theme.Topbar
 topbar.BorderSizePixel = 0
 topbar.Parent = window
-corner(topbar, 10)
+corner(topbar, 12)
 
 local title = Instance.new("TextLabel")
 title.BackgroundTransparency = 1
-title.Position = UDim2.fromOffset(16, 0)
-title.Size = UDim2.new(1, -120, 1, 0)
+title.Position = UDim2.fromOffset(18, 9)
+title.Size = UDim2.new(1, -260, 0, 24)
 title.Font = Enum.Font.GothamBold
 title.Text = "GAG Main"
 title.TextColor3 = Theme.Text
-title.TextSize = 16
+title.TextSize = 18
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.Parent = topbar
 
+local subtitle = Instance.new("TextLabel")
+subtitle.BackgroundTransparency = 1
+subtitle.Position = UDim2.fromOffset(18, 34)
+subtitle.Size = UDim2.new(1, -260, 0, 18)
+subtitle.Font = Enum.Font.Gotham
+subtitle.Text = "Main place control panel | RightShift toggles visibility"
+subtitle.TextColor3 = Theme.Muted
+subtitle.TextSize = 12
+subtitle.TextXAlignment = Enum.TextXAlignment.Left
+subtitle.Parent = topbar
+
 statusLabel = Instance.new("TextLabel")
-statusLabel.BackgroundTransparency = 1
+statusLabel.BackgroundColor3 = Theme.Input
 statusLabel.AnchorPoint = Vector2.new(1, 0)
-statusLabel.Position = UDim2.new(1, -58, 0, 0)
-statusLabel.Size = UDim2.fromOffset(180, 46)
-statusLabel.Font = Enum.Font.Gotham
+statusLabel.Position = UDim2.new(1, -60, 0, 17)
+statusLabel.Size = UDim2.fromOffset(154, 30)
+statusLabel.Font = Enum.Font.GothamBold
 statusLabel.Text = "Idle"
-statusLabel.TextColor3 = Theme.Muted
+statusLabel.TextColor3 = Theme.Accent
 statusLabel.TextSize = 12
-statusLabel.TextXAlignment = Enum.TextXAlignment.Right
+statusLabel.TextXAlignment = Enum.TextXAlignment.Center
 statusLabel.Parent = topbar
+corner(statusLabel, 15)
+stroke(statusLabel, Theme.StrokeSoft, 1)
 
 local close = Instance.new("TextButton")
 close.AnchorPoint = Vector2.new(1, 0.5)
-close.Position = UDim2.new(1, -14, 0.5, 0)
+close.Position = UDim2.new(1, -16, 0.5, 0)
 close.Size = UDim2.fromOffset(30, 26)
 close.BackgroundColor3 = Theme.Danger
 close.BorderSizePixel = 0
@@ -946,31 +972,35 @@ close.Parent = topbar
 corner(close, 6)
 
 local nav = Instance.new("Frame")
-nav.Position = UDim2.fromOffset(14, 60)
-nav.Size = UDim2.fromOffset(160, 560)
-nav.BackgroundTransparency = 1
+nav.Position = UDim2.fromOffset(14, 78)
+nav.Size = UDim2.fromOffset(186, 596)
+nav.BackgroundColor3 = Theme.Sidebar
+nav.BorderSizePixel = 0
 nav.Parent = window
+corner(nav, 10)
+stroke(nav, Theme.StrokeSoft, 1)
+pad(nav, 10)
 
 local navLayout = Instance.new("UIListLayout")
 navLayout.Padding = UDim.new(0, 8)
 navLayout.Parent = nav
 
 local content = Instance.new("Frame")
-content.Position = UDim2.fromOffset(188, 60)
-content.Size = UDim2.new(1, -204, 1, -74)
+content.Position = UDim2.fromOffset(214, 78)
+content.Size = UDim2.new(1, -228, 1, -94)
 content.BackgroundColor3 = Theme.Background
 content.BorderSizePixel = 0
 content.Parent = window
-corner(content, 8)
+corner(content, 10)
 stroke(content)
 
 local function page(name)
     local p = Instance.new("ScrollingFrame")
     p.Name = name .. "Page"
     p.BackgroundTransparency = 1
-    p.Size = UDim2.new(1, -20, 1, -20)
-    p.Position = UDim2.fromOffset(10, 10)
-    p.ScrollBarThickness = 5
+    p.Size = UDim2.new(1, -28, 1, -28)
+    p.Position = UDim2.fromOffset(14, 14)
+    p.ScrollBarThickness = 6
     p.ScrollBarImageColor3 = Theme.Accent
     p.Visible = false
     p.CanvasSize = UDim2.fromOffset(0, 0)
@@ -995,26 +1025,56 @@ local function switch(name)
     for buttonName, button in pairs(navButtons) do
         local active = buttonName == name
         button.BackgroundColor3 = active and Theme.Accent or Theme.Panel
-        button.TextColor3 = active and Theme.Background or Theme.Text
+        local title = button:FindFirstChild("Title")
+        if title then
+            title.TextColor3 = active and Theme.Background or Theme.Text
+        end
+        local sub = button:FindFirstChild("Sub")
+        if sub then
+            sub.TextColor3 = active and Color3.fromRGB(27, 41, 34) or Theme.Muted
+        end
     end
 end
 
-local function navButton(name, order)
+local function navButton(name, order, description)
     local b = Instance.new("TextButton")
     b.Name = name .. "Tab"
     b.LayoutOrder = order
-    b.Size = UDim2.new(1, 0, 0, 38)
+    b.Size = UDim2.new(1, 0, 0, 52)
     b.BackgroundColor3 = Theme.Panel
     b.BorderSizePixel = 0
-    b.Font = Enum.Font.GothamBold
-    b.Text = name
-    b.TextColor3 = Theme.Text
-    b.TextSize = 12
-    b.TextXAlignment = Enum.TextXAlignment.Left
+    b.Text = ""
+    b.AutoButtonColor = true
     b.Parent = nav
-    corner(b, 7)
-    stroke(b)
-    pad(b, 10)
+    corner(b, 8)
+    stroke(b, Theme.StrokeSoft, 1)
+
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.BackgroundTransparency = 1
+    title.Position = UDim2.fromOffset(12, 8)
+    title.Size = UDim2.new(1, -24, 0, 16)
+    title.Font = Enum.Font.GothamBold
+    title.Text = name
+    title.TextColor3 = Theme.Text
+    title.TextSize = 12
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.TextTruncate = Enum.TextTruncate.AtEnd
+    title.Parent = b
+
+    local sub = Instance.new("TextLabel")
+    sub.Name = "Sub"
+    sub.BackgroundTransparency = 1
+    sub.Position = UDim2.fromOffset(12, 27)
+    sub.Size = UDim2.new(1, -24, 0, 16)
+    sub.Font = Enum.Font.Gotham
+    sub.Text = description or ""
+    sub.TextColor3 = Theme.Muted
+    sub.TextSize = 10
+    sub.TextXAlignment = Enum.TextXAlignment.Left
+    sub.TextTruncate = Enum.TextTruncate.AtEnd
+    sub.Parent = b
+
     b.MouseButton1Click:Connect(function()
         switch(name)
     end)
@@ -1029,12 +1089,12 @@ local function section(parent, name)
     s.BackgroundColor3 = Theme.Panel
     s.BorderSizePixel = 0
     s.Parent = parent
-    corner(s, 8)
-    stroke(s)
-    pad(s, 12)
+    corner(s, 10)
+    stroke(s, Theme.StrokeSoft, 1)
+    pad(s, 14)
 
     local layout = Instance.new("UIListLayout")
-    layout.Padding = UDim.new(0, 8)
+    layout.Padding = UDim.new(0, 10)
     layout.Parent = s
 
     local heading = Instance.new("TextLabel")
@@ -1043,26 +1103,42 @@ local function section(parent, name)
     heading.Font = Enum.Font.GothamBold
     heading.Text = name
     heading.TextColor3 = Theme.Accent
-    heading.TextSize = 14
+    heading.TextSize = 15
     heading.TextXAlignment = Enum.TextXAlignment.Left
     heading.Parent = s
+
+    local description = SectionDescriptions[name]
+    if description then
+        local note = Instance.new("TextLabel")
+        note.BackgroundTransparency = 1
+        note.Size = UDim2.new(1, 0, 0, 34)
+        note.Font = Enum.Font.Gotham
+        note.Text = description
+        note.TextColor3 = Theme.Muted
+        note.TextSize = 12
+        note.TextWrapped = true
+        note.TextXAlignment = Enum.TextXAlignment.Left
+        note.TextYAlignment = Enum.TextYAlignment.Top
+        note.Parent = s
+    end
     return s
 end
 
 local function row(parent, height)
     local r = Instance.new("Frame")
-    r.Size = UDim2.new(1, 0, 0, height or 42)
+    r.Size = UDim2.new(1, 0, 0, height or 46)
     r.BackgroundColor3 = Theme.Panel2
+    r.BackgroundTransparency = 0.02
     r.BorderSizePixel = 0
     r.Parent = parent
-    corner(r, 7)
-    stroke(r)
+    corner(r, 8)
+    stroke(r, Theme.StrokeSoft, 1)
     return r
 end
 
 local function button(parent, text, callback)
     local b = Instance.new("TextButton")
-    b.Size = UDim2.new(1, 0, 0, 36)
+    b.Size = UDim2.new(1, 0, 0, 40)
     b.BackgroundColor3 = Theme.Accent2
     b.BorderSizePixel = 0
     b.Font = Enum.Font.GothamBold
@@ -1070,7 +1146,8 @@ local function button(parent, text, callback)
     b.TextColor3 = Theme.Background
     b.TextSize = 12
     b.Parent = parent
-    corner(b, 7)
+    corner(b, 8)
+    stroke(b, Color3.fromRGB(255, 224, 147), 1)
     b.MouseButton1Click:Connect(function()
         if callback then callback() end
     end)
@@ -1078,11 +1155,11 @@ local function button(parent, text, callback)
 end
 
 local function toggle(parent, text, value, callback)
-    local r = row(parent, 42)
+    local r = row(parent, 46)
     local label = Instance.new("TextLabel")
     label.BackgroundTransparency = 1
-    label.Position = UDim2.fromOffset(12, 0)
-    label.Size = UDim2.new(1, -80, 1, 0)
+    label.Position = UDim2.fromOffset(14, 0)
+    label.Size = UDim2.new(1, -94, 1, 0)
     label.Font = Enum.Font.GothamMedium
     label.Text = text
     label.TextColor3 = Theme.Text
@@ -1092,13 +1169,14 @@ local function toggle(parent, text, value, callback)
 
     local b = Instance.new("TextButton")
     b.AnchorPoint = Vector2.new(1, 0.5)
-    b.Position = UDim2.new(1, -10, 0.5, 0)
-    b.Size = UDim2.fromOffset(54, 24)
+    b.Position = UDim2.new(1, -12, 0.5, 0)
+    b.Size = UDim2.fromOffset(62, 26)
     b.BorderSizePixel = 0
     b.Font = Enum.Font.GothamBold
     b.TextSize = 10
     b.Parent = r
-    corner(b, 6)
+    corner(b, 13)
+    stroke(b, Theme.StrokeSoft, 1)
 
     local on = value == true
     local function render(fire)
@@ -1120,10 +1198,10 @@ local function toggle(parent, text, value, callback)
 end
 
 local function input(parent, text, default, callback)
-    local r = row(parent, 42)
+    local r = row(parent, 46)
     local label = Instance.new("TextLabel")
     label.BackgroundTransparency = 1
-    label.Position = UDim2.fromOffset(12, 0)
+    label.Position = UDim2.fromOffset(14, 0)
     label.Size = UDim2.new(0.45, -16, 1, 0)
     label.Font = Enum.Font.GothamMedium
     label.Text = text
@@ -1134,8 +1212,8 @@ local function input(parent, text, default, callback)
 
     local box = Instance.new("TextBox")
     box.AnchorPoint = Vector2.new(1, 0.5)
-    box.Position = UDim2.new(1, -10, 0.5, 0)
-    box.Size = UDim2.new(0.55, -8, 0, 28)
+    box.Position = UDim2.new(1, -12, 0.5, 0)
+    box.Size = UDim2.new(0.55, -10, 0, 30)
     box.BackgroundColor3 = Theme.Input
     box.BorderSizePixel = 0
     box.ClearTextOnFocus = false
@@ -1143,8 +1221,10 @@ local function input(parent, text, default, callback)
     box.TextColor3 = Theme.Text
     box.TextSize = 12
     box.Font = Enum.Font.Gotham
+    box.TextXAlignment = Enum.TextXAlignment.Left
     box.Parent = r
-    corner(box, 6)
+    corner(box, 7)
+    stroke(box, Theme.StrokeSoft, 1)
     pad(box, 8)
     box.FocusLost:Connect(function()
         if callback then callback(box.Text) end
@@ -1163,10 +1243,10 @@ local function multiselect(parent, text, optionGetter, selected, callback)
     layout.Padding = UDim.new(0, 6)
     layout.Parent = container
 
-    local r = row(container, 42)
+    local r = row(container, 48)
     local label = Instance.new("TextLabel")
     label.BackgroundTransparency = 1
-    label.Position = UDim2.fromOffset(12, 0)
+    label.Position = UDim2.fromOffset(14, 0)
     label.Size = UDim2.new(0.35, -12, 1, 0)
     label.Font = Enum.Font.GothamMedium
     label.Text = text
@@ -1177,8 +1257,8 @@ local function multiselect(parent, text, optionGetter, selected, callback)
 
     local open = Instance.new("TextButton")
     open.AnchorPoint = Vector2.new(1, 0.5)
-    open.Position = UDim2.new(1, -10, 0.5, 0)
-    open.Size = UDim2.new(0.65, -8, 0, 28)
+    open.Position = UDim2.new(1, -12, 0.5, 0)
+    open.Size = UDim2.new(0.65, -10, 0, 30)
     open.BackgroundColor3 = Theme.Input
     open.BorderSizePixel = 0
     open.Font = Enum.Font.Gotham
@@ -1186,18 +1266,20 @@ local function multiselect(parent, text, optionGetter, selected, callback)
     open.TextSize = 12
     open.TextXAlignment = Enum.TextXAlignment.Left
     open.Parent = r
-    corner(open, 6)
+    corner(open, 7)
+    stroke(open, Theme.StrokeSoft, 1)
     pad(open, 8)
 
     local list = Instance.new("ScrollingFrame")
-    list.Size = UDim2.new(1, 0, 0, 190)
+    list.Size = UDim2.new(1, 0, 0, 220)
     list.BackgroundColor3 = Theme.Input
     list.BorderSizePixel = 0
     list.ScrollBarThickness = 4
     list.Visible = false
     list.Parent = container
-    corner(list, 7)
-    pad(list, 6)
+    corner(list, 8)
+    stroke(list, Theme.StrokeSoft, 1)
+    pad(list, 8)
 
     local listLayout = Instance.new("UIListLayout")
     listLayout.Padding = UDim.new(0, 4)
@@ -1209,7 +1291,10 @@ local function multiselect(parent, text, optionGetter, selected, callback)
     local function textValue()
         local names = selectedNames(selected)
         if #names == 0 then
-            return "All"
+            return "All items"
+        end
+        if #names > 2 then
+            return tostring(#names) .. " selected"
         end
         return table.concat(names, ", ")
     end
@@ -1223,11 +1308,11 @@ local function multiselect(parent, text, optionGetter, selected, callback)
         open.Text = textValue()
 
         local all = Instance.new("TextButton")
-        all.Size = UDim2.new(1, -12, 0, 28)
+        all.Size = UDim2.new(1, -16, 0, 30)
         all.BackgroundColor3 = Theme.Panel2
         all.BorderSizePixel = 0
         all.Font = Enum.Font.GothamBold
-        all.Text = "Clear / All"
+        all.Text = "Use all items"
         all.TextColor3 = Theme.Accent
         all.TextSize = 12
         all.TextXAlignment = Enum.TextXAlignment.Left
@@ -1248,7 +1333,7 @@ local function multiselect(parent, text, optionGetter, selected, callback)
 
         for _, option in ipairs(optionGetter()) do
             local item = Instance.new("TextButton")
-            item.Size = UDim2.new(1, -12, 0, 28)
+            item.Size = UDim2.new(1, -16, 0, 30)
             item.BackgroundColor3 = selected[option] and Theme.Accent or Theme.Panel2
             item.BorderSizePixel = 0
             item.Font = Enum.Font.Gotham
@@ -1295,13 +1380,13 @@ local rewards = page("Rewards")
 local utility = page("Utility")
 local logs = page("Logs")
 
-navButton("Dashboard", 1)
-navButton("Hatch", 2)
-navButton("Pets", 3)
-navButton("Shops", 4)
-navButton("Rewards", 5)
-navButton("Utility", 6)
-navButton("Logs", 7)
+navButton("Dashboard", 1, "Overview")
+navButton("Hatch", 2, "Eggs")
+navButton("Pets", 3, "Feed / level")
+navButton("Shops", 4, "Buying")
+navButton("Rewards", 5, "Claims / packs")
+navButton("Utility", 6, "Farm tools")
+navButton("Logs", 7, "Output")
 
 do
     local s = section(dashboard, "Status")
@@ -1316,75 +1401,122 @@ do
     summaryLabel.TextXAlignment = Enum.TextXAlignment.Left
     summaryLabel.Parent = s
     button(s, "Refresh Inventory", refreshInventory)
+
+    local quick = section(dashboard, "Quick Actions")
+    button(quick, "Hatch Ready Egg", Actions.HatchOnce)
+    button(quick, "Buy Selected Shops", Actions.AutoBuyOnce)
+    button(quick, "Claim Rewards", Actions.ClaimRewardsOnce)
+    button(quick, "Open Seed Packs", Actions.OpenSeedPacksOnce)
+
+    local guide = section(dashboard, "How Selection Works")
+    local guideText = Instance.new("TextLabel")
+    guideText.BackgroundTransparency = 1
+    guideText.Size = UDim2.new(1, 0, 0, 72)
+    guideText.Font = Enum.Font.Gotham
+    guideText.Text = "Empty selectors mean all available items. Refresh Inventory after joining, hatching, buying, or moving tools. Test with one-time buttons before enabling loops."
+    guideText.TextColor3 = Theme.Muted
+    guideText.TextSize = 12
+    guideText.TextWrapped = true
+    guideText.TextXAlignment = Enum.TextXAlignment.Left
+    guideText.TextYAlignment = Enum.TextYAlignment.Top
+    guideText.Parent = guide
 end
 
 do
-    local s = section(hatch, "Hatch")
-    toggle(s, "Auto Hatch Ready Eggs", Config.Hatch.AutoHatch, function(v) Config.Hatch.AutoHatch = v end)
-    toggle(s, "Auto Place Eggs", Config.Hatch.AutoPlaceEggs, function(v) Config.Hatch.AutoPlaceEggs = v end)
-    toggle(s, "Egg ESP", Config.Hatch.EggEsp, function(v) Config.Hatch.EggEsp = v end)
-    input(s, "Hatch Interval", Config.Hatch.HatchInterval, function(v) Config.Hatch.HatchInterval = math.max(0.5, tonumber(v) or 1.5) end)
-    input(s, "Place Interval", Config.Hatch.PlaceInterval, function(v) Config.Hatch.PlaceInterval = math.max(1, tonumber(v) or 8) end)
-    input(s, "Max Eggs Placed", Config.Hatch.MaxEggsPlaced, function(v) Config.Hatch.MaxEggsPlaced = math.max(1, math.floor(tonumber(v) or MAX_EGGS_PLACED)) end)
-    multiselect(s, "Selected Eggs", function() return Options.Eggs end, Config.Hatch.SelectedEggs, nil)
-    button(s, "Hatch Once", Actions.HatchOnce)
-    button(s, "Place Eggs Once", Actions.PlaceEggsOnce)
+    local auto = section(hatch, "Hatch")
+    toggle(auto, "Auto Hatch Ready Eggs", Config.Hatch.AutoHatch, function(v) Config.Hatch.AutoHatch = v end)
+    toggle(auto, "Auto Place Eggs", Config.Hatch.AutoPlaceEggs, function(v) Config.Hatch.AutoPlaceEggs = v end)
+    toggle(auto, "Egg ESP", Config.Hatch.EggEsp, function(v) Config.Hatch.EggEsp = v end)
+
+    local timing = section(hatch, "Timing & Limits")
+    input(timing, "Hatch Interval", Config.Hatch.HatchInterval, function(v) Config.Hatch.HatchInterval = math.max(0.5, tonumber(v) or 1.5) end)
+    input(timing, "Place Interval", Config.Hatch.PlaceInterval, function(v) Config.Hatch.PlaceInterval = math.max(1, tonumber(v) or 8) end)
+    input(timing, "Max Eggs Placed", Config.Hatch.MaxEggsPlaced, function(v) Config.Hatch.MaxEggsPlaced = math.max(1, math.floor(tonumber(v) or MAX_EGGS_PLACED)) end)
+
+    local selected = section(hatch, "Egg Selection")
+    multiselect(selected, "Selected Eggs", function() return Options.Eggs end, Config.Hatch.SelectedEggs, nil)
+
+    local manual = section(hatch, "Manual Runs")
+    button(manual, "Hatch Once", Actions.HatchOnce)
+    button(manual, "Place Eggs Once", Actions.PlaceEggsOnce)
 end
 
 do
-    local s = section(pets, "Pets")
-    toggle(s, "Auto Feed", Config.Pets.AutoFeed, function(v) Config.Pets.AutoFeed = v end)
-    toggle(s, "Auto Level", Config.Pets.AutoLevel, function(v) Config.Pets.AutoLevel = v end)
-    toggle(s, "Auto Favorite", Config.Pets.AutoFavorite, function(v) Config.Pets.AutoFavorite = v end)
-    input(s, "Feed Interval", Config.Pets.FeedInterval, function(v) Config.Pets.FeedInterval = math.max(0.5, tonumber(v) or 2) end)
-    input(s, "Level Interval", Config.Pets.LevelInterval, function(v) Config.Pets.LevelInterval = math.max(1, tonumber(v) or 5) end)
-    multiselect(s, "Selected Pets", function() return Options.Pets end, Config.Pets.SelectedPets, nil)
-    button(s, "Feed Once", Actions.FeedPetsOnce)
-    button(s, "Level Once", Actions.LevelPetsOnce)
-    button(s, "Favorite Once", Actions.FavoritePetsOnce)
+    local auto = section(pets, "Pets")
+    toggle(auto, "Auto Feed", Config.Pets.AutoFeed, function(v) Config.Pets.AutoFeed = v end)
+    toggle(auto, "Auto Level", Config.Pets.AutoLevel, function(v) Config.Pets.AutoLevel = v end)
+    toggle(auto, "Auto Favorite", Config.Pets.AutoFavorite, function(v) Config.Pets.AutoFavorite = v end)
+
+    local timing = section(pets, "Pet Timing")
+    input(timing, "Feed Interval", Config.Pets.FeedInterval, function(v) Config.Pets.FeedInterval = math.max(0.5, tonumber(v) or 2) end)
+    input(timing, "Level Interval", Config.Pets.LevelInterval, function(v) Config.Pets.LevelInterval = math.max(1, tonumber(v) or 5) end)
+
+    local selected = section(pets, "Pet Selection")
+    multiselect(selected, "Selected Pets", function() return Options.Pets end, Config.Pets.SelectedPets, nil)
+
+    local manual = section(pets, "Manual Runs")
+    button(manual, "Feed Once", Actions.FeedPetsOnce)
+    button(manual, "Level Once", Actions.LevelPetsOnce)
+    button(manual, "Favorite Once", Actions.FavoritePetsOnce)
 end
 
 do
-    local s = section(shops, "Shops")
-    toggle(s, "Auto Buy", Config.Shops.AutoBuy, function(v) Config.Shops.AutoBuy = v end)
-    input(s, "Buy Interval", Config.Shops.BuyInterval, function(v) Config.Shops.BuyInterval = math.max(1, tonumber(v) or 3) end)
-    multiselect(s, "Selected Shops", function() return Options.Shops end, Config.Shops.SelectedShops, nil)
-    button(s, "Buy Selected Shops Once", Actions.AutoBuyOnce)
+    local auto = section(shops, "Shops")
+    toggle(auto, "Auto Buy", Config.Shops.AutoBuy, function(v) Config.Shops.AutoBuy = v end)
+    input(auto, "Buy Interval", Config.Shops.BuyInterval, function(v) Config.Shops.BuyInterval = math.max(1, tonumber(v) or 3) end)
+
+    local selected = section(shops, "Shop Selection")
+    multiselect(selected, "Selected Shops", function() return Options.Shops end, Config.Shops.SelectedShops, nil)
+
+    local manual = section(shops, "Manual Runs")
+    button(manual, "Buy Selected Shops Once", Actions.AutoBuyOnce)
 end
 
 do
-    local s = section(rewards, "Rewards & Packs")
-    toggle(s, "Auto Claim Rewards", Config.Rewards.AutoClaim, function(v) Config.Rewards.AutoClaim = v end)
-    input(s, "Claim Interval", Config.Rewards.ClaimInterval, function(v) Config.Rewards.ClaimInterval = math.max(5, tonumber(v) or 30) end)
-    toggle(s, "Auto Open Seed Packs", Config.Rewards.AutoOpenPacks, function(v) Config.Rewards.AutoOpenPacks = v end)
-    input(s, "Pack Interval", Config.Rewards.PackInterval, function(v) Config.Rewards.PackInterval = math.max(3, tonumber(v) or 12) end)
-    multiselect(s, "Selected Seed Packs", function() return Options.SeedPacks end, Config.Rewards.SelectedPacks, nil)
-    button(s, "Claim Rewards Once", Actions.ClaimRewardsOnce)
-    button(s, "Open Seed Packs Once", Actions.OpenSeedPacksOnce)
+    local auto = section(rewards, "Rewards & Packs")
+    toggle(auto, "Auto Claim Rewards", Config.Rewards.AutoClaim, function(v) Config.Rewards.AutoClaim = v end)
+    input(auto, "Claim Interval", Config.Rewards.ClaimInterval, function(v) Config.Rewards.ClaimInterval = math.max(5, tonumber(v) or 30) end)
+    toggle(auto, "Auto Open Seed Packs", Config.Rewards.AutoOpenPacks, function(v) Config.Rewards.AutoOpenPacks = v end)
+    input(auto, "Pack Interval", Config.Rewards.PackInterval, function(v) Config.Rewards.PackInterval = math.max(3, tonumber(v) or 12) end)
+
+    local selected = section(rewards, "Pack Selection")
+    multiselect(selected, "Selected Seed Packs", function() return Options.SeedPacks end, Config.Rewards.SelectedPacks, nil)
+
+    local manual = section(rewards, "Manual Runs")
+    button(manual, "Claim Rewards Once", Actions.ClaimRewardsOnce)
+    button(manual, "Open Seed Packs Once", Actions.OpenSeedPacksOnce)
 end
 
 do
-    local s = section(utility, "Utility")
-    toggle(s, "Auto Collect Fruit", Config.Utility.AutoCollectFruit, function(v) Config.Utility.AutoCollectFruit = v end)
-    toggle(s, "Auto Sell Fruit", Config.Utility.AutoSellFruit, function(v) Config.Utility.AutoSellFruit = v end)
-    toggle(s, "Auto Plant Seeds", Config.Utility.AutoPlantSeeds, function(v) Config.Utility.AutoPlantSeeds = v end)
-    toggle(s, "Auto Rebirth", Config.Utility.AutoRebirth, function(v) Config.Utility.AutoRebirth = v end)
-    toggle(s, "Anti Lag", Config.Utility.AntiLag, function(v) Config.Utility.AntiLag = v; Actions.SetAntiLag(v) end)
-    toggle(s, "Remove Textures", Config.Utility.RemoveTextures, function(v) Config.Utility.RemoveTextures = v; Actions.SetTexturesRemoved(v) end)
-    input(s, "Fruit Interval", Config.Utility.FruitInterval, function(v) Config.Utility.FruitInterval = math.max(1, tonumber(v) or 2) end)
-    input(s, "Plant Interval", Config.Utility.PlantInterval, function(v) Config.Utility.PlantInterval = math.max(0.2, tonumber(v) or 0.6) end)
-    input(s, "Rebirth Interval", Config.Utility.RebirthInterval, function(v) Config.Utility.RebirthInterval = math.max(1, tonumber(v) or 10) end)
-    multiselect(s, "Selected Seeds", function() return Options.Seeds end, Config.Utility.SelectedSeeds, nil)
-    button(s, "Collect Fruit Once", Actions.CollectFruitOnce)
-    button(s, "Sell Fruit Once", Actions.SellFruitOnce)
-    button(s, "Plant Seeds Once", Actions.PlantSeedsOnce)
-    button(s, "Rebirth Once", Actions.RebirthOnce)
+    local farm = section(utility, "Utility")
+    toggle(farm, "Auto Collect Fruit", Config.Utility.AutoCollectFruit, function(v) Config.Utility.AutoCollectFruit = v end)
+    toggle(farm, "Auto Sell Fruit", Config.Utility.AutoSellFruit, function(v) Config.Utility.AutoSellFruit = v end)
+    toggle(farm, "Auto Plant Seeds", Config.Utility.AutoPlantSeeds, function(v) Config.Utility.AutoPlantSeeds = v end)
+    toggle(farm, "Auto Rebirth", Config.Utility.AutoRebirth, function(v) Config.Utility.AutoRebirth = v end)
+
+    local timing = section(utility, "Utility Timing")
+    input(timing, "Fruit Interval", Config.Utility.FruitInterval, function(v) Config.Utility.FruitInterval = math.max(1, tonumber(v) or 2) end)
+    input(timing, "Plant Interval", Config.Utility.PlantInterval, function(v) Config.Utility.PlantInterval = math.max(0.2, tonumber(v) or 0.6) end)
+    input(timing, "Rebirth Interval", Config.Utility.RebirthInterval, function(v) Config.Utility.RebirthInterval = math.max(1, tonumber(v) or 10) end)
+
+    local selected = section(utility, "Seed Selection")
+    multiselect(selected, "Selected Seeds", function() return Options.Seeds end, Config.Utility.SelectedSeeds, nil)
+
+    local visual = section(utility, "Visual Helpers")
+    toggle(visual, "Anti Lag", Config.Utility.AntiLag, function(v) Config.Utility.AntiLag = v; Actions.SetAntiLag(v) end)
+    toggle(visual, "Remove Textures", Config.Utility.RemoveTextures, function(v) Config.Utility.RemoveTextures = v; Actions.SetTexturesRemoved(v) end)
+
+    local manual = section(utility, "Manual Runs")
+    button(manual, "Collect Fruit Once", Actions.CollectFruitOnce)
+    button(manual, "Sell Fruit Once", Actions.SellFruitOnce)
+    button(manual, "Plant Seeds Once", Actions.PlantSeedsOnce)
+    button(manual, "Rebirth Once", Actions.RebirthOnce)
 end
 
 do
     local s = section(logs, "Activity")
     local scroll = Instance.new("ScrollingFrame")
-    scroll.Size = UDim2.new(1, 0, 0, 430)
+    scroll.Size = UDim2.new(1, 0, 0, 470)
     scroll.BackgroundColor3 = Theme.Input
     scroll.BorderSizePixel = 0
     scroll.ScrollBarThickness = 6
