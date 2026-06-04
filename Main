@@ -50,6 +50,7 @@ local Remotes = {
     PetsService = {"PetsService"},
     PetBoostService = {"PetBoostService"},
     PetEggService = {"PetEggService"},
+    EggReadyToHatch = {"EggReadyToHatch_RE"},
     PetMutationMachine = {"PetMutationMachineService_RE"},
     GetPetMutationNames = {"GetPetMutationNames"},
     SettingsService = {"SettingsService"},
@@ -211,6 +212,8 @@ local State = {
     Last = {},
     Busy = {},
     EggEsp = {},
+    EggSignals = {},
+    EggRemoteListenersInstalled = false,
 }
 
 local function copyList(list)
@@ -1107,58 +1110,83 @@ local function eggMatchesSelection(egg, selected)
     return false
 end
 
-local function eggReady(egg)
-    local lower = textOf(egg)
-    if lower:find("can hatch", 1, true)
-        or lower:find("canhatch true", 1, true)
-        or lower:find("hatchready true", 1, true)
-        or lower:find("ready true", 1, true)
-        or lower:find("ready!", 1, true)
-    then
-        return true
+local function readEggField(egg, key)
+    local ok, value = pcall(function()
+        return egg:GetAttribute(key)
+    end)
+    if ok and value ~= nil then
+        return value
+    end
+    local child = egg:FindFirstChild(key)
+    if child and child:IsA("ValueBase") then
+        return child.Value
+    end
+    return nil
+end
+
+local function eggReadyInfo(egg)
+    local signal = State.EggSignals[egg]
+    if signal and signal.Ready == true then
+        return true, signal.Reason or "ready remote"
     end
 
     for _, key in ipairs({"Ready", "CanHatch", "HatchReady", "IsReady"}) do
-        local ok, value = pcall(function()
-            return egg:GetAttribute(key)
-        end)
-        if ok and value == true then
-            return true
-        end
-        local child = egg:FindFirstChild(key)
-        if child and child:IsA("BoolValue") and child.Value == true then
-            return true
+        local value = readEggField(egg, key)
+        if value == true then
+            return true, key
+        elseif value == false then
+            return false, key .. "=false"
         end
     end
 
     local now = os.time()
     for _, key in ipairs({"HatchAt", "ReadyAt", "HatchReadyAt", "FinishTime", "EndTime"}) do
-        local ok, value = pcall(function()
-            return egg:GetAttribute(key)
-        end)
-        if ok and tonumber(value) and tonumber(value) <= now then
-            return true
-        end
-        local child = egg:FindFirstChild(key)
-        if child and child:IsA("ValueBase") and tonumber(child.Value) and tonumber(child.Value) <= now then
-            return true
+        local value = tonumber(readEggField(egg, key))
+        if value then
+            if value <= now then
+                return true, key
+            end
+            return false, ("%s %.0fs"):format(key, value - now)
         end
     end
 
-    for _, key in ipairs({"TimeLeft", "TimeRemaining", "ReadyTime", "HatchTime", "HatchTimeLeft", "HatchTimeRemaining", "Remaining", "Cooldown"}) do
-        local ok, value = pcall(function()
-            return egg:GetAttribute(key)
-        end)
-        if ok and tonumber(value) and tonumber(value) <= 0 then
-            return true
-        end
-        local child = egg:FindFirstChild(key)
-        if child and child:IsA("ValueBase") and tonumber(child.Value) and tonumber(child.Value) <= 0 then
-            return true
+    for _, key in ipairs({"TimeLeft", "TimeRemaining", "HatchTimeLeft", "HatchTimeRemaining", "Remaining", "Cooldown"}) do
+        local value = tonumber(readEggField(egg, key))
+        if value then
+            if value <= 0 then
+                return true, key
+            end
+            return false, ("%s %.0fs"):format(key, value)
         end
     end
 
-    return false
+    local readyTime = tonumber(readEggField(egg, "ReadyTime"))
+    if readyTime then
+        if readyTime > 100000 then
+            if readyTime <= now then
+                return true, "ReadyTime"
+            end
+            return false, ("ReadyTime %.0fs"):format(readyTime - now)
+        end
+        if readyTime <= 0 then
+            return true, "ReadyTime"
+        end
+        return false, ("ReadyTime %.0fs"):format(readyTime)
+    end
+
+    if signal and signal.Progress then
+        if signal.Progress >= 0.999 then
+            return true, "PetEggService progress"
+        end
+        return false, ("progress %d%%"):format(math.floor(signal.Progress * 100))
+    end
+
+    return false, "no ready signal"
+end
+
+local function eggReady(egg)
+    local ready = eggReadyInfo(egg)
+    return ready == true
 end
 
 local function eggWorldPosition(egg)
@@ -1268,6 +1296,65 @@ local function hatchEgg(egg)
     return ok and 1 or 0
 end
 
+local function noteEggSignal(egg, ready, reason, progress)
+    if typeof(egg) ~= "Instance" then
+        return
+    end
+    local signal = State.EggSignals[egg] or {}
+    if ready ~= nil then
+        signal.Ready = ready
+    end
+    if reason then
+        signal.Reason = reason
+    end
+    if progress then
+        signal.Progress = progress
+    end
+    signal.UpdatedAt = os.clock()
+    State.EggSignals[egg] = signal
+end
+
+local function installEggRemoteListeners()
+    if State.EggRemoteListenersInstalled then
+        return
+    end
+    State.EggRemoteListenersInstalled = true
+
+    local petEggRemote = remote("PetEggService")
+    if petEggRemote and petEggRemote:IsA("RemoteEvent") then
+        petEggRemote.OnClientEvent:Connect(function(egg, progress)
+            if typeof(egg) == "Instance" then
+                local numericProgress = tonumber(progress)
+                noteEggSignal(egg, numericProgress and numericProgress >= 0.999 or nil, "PetEggService", numericProgress)
+            end
+        end)
+    end
+
+    local readyRemote = remote("EggReadyToHatch")
+    if readyRemote and readyRemote:IsA("RemoteEvent") then
+        readyRemote.OnClientEvent:Connect(function(egg, ready)
+            if typeof(egg) == "Instance" then
+                noteEggSignal(egg, ready ~= false, "EggReadyToHatch_RE")
+            end
+        end)
+    end
+end
+
+local function remoteStatus(name)
+    local r = remote(name)
+    if not r then
+        return name .. ": missing"
+    end
+    return ("%s: %s at %s"):format(name, r.ClassName, r:GetFullName())
+end
+
+function Actions.LogEggRemoteStatus()
+    installEggRemoteListeners()
+    log(remoteStatus("PetEggService"))
+    log(remoteStatus("EggReadyToHatch"))
+    log(("Own farm egg roots: %d"):format(#eggRoots()))
+end
+
 local function eggAdornee(egg)
     if egg:IsA("BasePart") then
         return egg
@@ -1371,7 +1458,7 @@ local function updateEggEsp()
                 adornments.Highlight.Adornee = egg
             end
 
-            local ready = eggReady(egg)
+            local ready, readyReason = eggReadyInfo(egg)
             local color = ready and Theme.Accent or Theme.Accent2
             if adornments.Highlight then
                 adornments.Highlight.FillColor = color
@@ -1385,6 +1472,8 @@ local function updateEggEsp()
                     stateText = stateText .. " | " .. petName
                 elseif ready then
                     stateText = stateText .. " | Pet unknown"
+                elseif readyReason and readyReason ~= "no ready signal" then
+                    stateText = stateText .. " | " .. readyReason
                 end
                 adornments.Label.Text = ("%s\n%s"):format(eggDisplayName(egg), stateText)
             end
@@ -1407,7 +1496,13 @@ end
 function Actions.HatchOnce()
     local eggs = findReadyEggs()
     if #eggs == 0 then
-        log("Hatch skipped: no ready selected egg found.")
+        local targets = eggEspTargets()
+        if #targets > 0 then
+            local _, reason = eggReadyInfo(targets[1])
+            log("Hatch skipped: selected egg is not ready (" .. tostring(reason) .. ").")
+        else
+            log("Hatch skipped: no selected physical egg found in your own garden.")
+        end
         return false
     end
 
@@ -2145,6 +2240,7 @@ do
     local manual = section(hatch, "Manual Runs")
     button(manual, "Hatch Once", Actions.HatchOnce)
     button(manual, "Place Eggs Once", Actions.PlaceEggsOnce)
+    button(manual, "Log Egg Remote Status", Actions.LogEggRemoteStatus)
 end
 
 do
@@ -2364,6 +2460,7 @@ task.spawn(function()
     end
 end)
 
+installEggRemoteListeners()
 refreshInventory()
 switch("Dashboard")
 if Config.Utility.AntiLag then
