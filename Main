@@ -169,8 +169,10 @@ local Config = {
         HatchInterval = 1.5,
         PlaceInterval = 8,
         MaxEggsPlaced = MAX_EGGS_PLACED,
-        HatchTeam = {},
+        HatchReductionTeam = {},
         SealTeam = {},
+        KoiTeam = {},
+        BrontoTeam = {},
     },
     Pets = {
         AutoFeed = false,
@@ -180,9 +182,9 @@ local Config = {
         FeedInterval = 2,
         LevelInterval = 5,
         KgBoostInterval = 5,
+        KgBoostStopAt = 5.4,
         FavoriteMode = "Favorite",
         SelectedPets = {},
-        FeedTeam = {},
         LevelTeam = {},
         KgBoostTeam = {},
     },
@@ -403,8 +405,8 @@ local SectionDescriptions = {
     Pets = "Run pet feed, level, and favorite actions on selected pets. Empty selections mean all.",
     Shops = "Choose shop groups to run. Manual run buttons are useful for testing first.",
     ["Rewards & Packs"] = "Open selected seed packs on a timer.",
-    ["Hatch Teams"] = "Choose pet groups to use before hatching ready eggs.",
-    ["Pet Teams"] = "Choose separate groups for feeding, leveling, and KG boost workflows.",
+    ["Hatch Teams"] = "Seal, Koi, Bronto, and Elephant-style support teams auto-pick the highest KG matching pet found.",
+    ["Pet Teams"] = "Feed uses selected pets. Leveling is manual selection. KG boost auto-requires your highest KG Elephant.",
     Utility = "Fruit, planting, rebirth, visual cleanup, and general helpers.",
     Activity = "Recent actions, missing remotes, and refresh status.",
 }
@@ -711,6 +713,53 @@ local function isPetItem(instance)
     return false
 end
 
+local function petKgFromName(name)
+    local text = tostring(name or "")
+    local value = text:match("([%d%.]+)%s*[Kk][Gg]")
+    return tonumber(value)
+end
+
+local function petKg(entry)
+    return petKgFromName(entry and entry.Name) or petKgFromName(entry and entry.Instance and textOf(entry.Instance)) or 0
+end
+
+local function petNameMatches(entry, target)
+    local name = normalizedName(entry and entry.Name)
+    local instanceName = normalizedName(entry and entry.Instance and entry.Instance.Name)
+    local needle = normalizedName(target)
+    return name:find(needle, 1, true) ~= nil or instanceName:find(needle, 1, true) ~= nil
+end
+
+local function highestPetByName(target)
+    local best
+    local bestKg = -1
+    for _, entry in ipairs(Inventory.Pets or {}) do
+        if petNameMatches(entry, target) then
+            local kg = petKg(entry)
+            if kg > bestKg then
+                best = entry
+                bestKg = kg
+            end
+        end
+    end
+    return best
+end
+
+local function setSinglePetSelection(selection, entry)
+    if entry then
+        setSelectionFromList(selection, {entry.Name})
+    else
+        setSelectionFromList(selection, {})
+    end
+end
+
+local function autoSelectSpecificPetTeams()
+    setSinglePetSelection(Config.Hatch.SealTeam, highestPetByName("Seal"))
+    setSinglePetSelection(Config.Hatch.KoiTeam, highestPetByName("Koi"))
+    setSinglePetSelection(Config.Hatch.BrontoTeam, highestPetByName("Bronto"))
+    setSinglePetSelection(Config.Pets.KgBoostTeam, highestPetByName("Elephant"))
+end
+
 local function refreshInventory()
     for key in pairs(Inventory) do
         Inventory[key] = {}
@@ -807,6 +856,7 @@ local function refreshInventory()
             Options.Mutations[#Options.Mutations + 1] = mutation
         end
     end
+    autoSelectSpecificPetTeams()
 
     for key, list in pairs(Options) do
         if type(list) == "table" and key ~= "Shops" then
@@ -1718,8 +1768,10 @@ function Actions.HatchOnce()
     end
 
     local previousPetKeys = capturePetKeys()
-    runPetTeam(Config.Hatch.HatchTeam, "Egg hatch team")
+    runPetTeam(Config.Hatch.HatchReductionTeam, "Egg hatch reduction team")
     runPetTeam(Config.Hatch.SealTeam, "Seal hatch team")
+    runPetTeam(Config.Hatch.KoiTeam, "Koi hatch team")
+    runPetTeam(Config.Hatch.BrontoTeam, "Bronto hatch team")
     task.wait(0.15)
     local fired = hatchEgg(eggs[1].Egg)
     local name = eggDisplayName(eggs[1].Egg)
@@ -1782,8 +1834,7 @@ end
 
 function Actions.FeedPetsOnce()
     local fired = 0
-    local selected = #(selectedNames(Config.Pets.FeedTeam)) > 0 and Config.Pets.FeedTeam or Config.Pets.SelectedPets
-    for _, entry in ipairs(selectedEntries("Pets", selected)) do
+    for _, entry in ipairs(selectedEntries("Pets", Config.Pets.SelectedPets)) do
         local uuid = entry.Uuid
         if uuid then
             local ok = callRemote("ActivePetService", "Feed", uuid)
@@ -1811,8 +1862,21 @@ end
 
 function Actions.KgBoostPetsOnce()
     local fired = 0
-    local selected = #(selectedNames(Config.Pets.KgBoostTeam)) > 0 and Config.Pets.KgBoostTeam or Config.Pets.SelectedPets
-    for _, entry in ipairs(selectedEntries("Pets", selected)) do
+    local elephant = highestPetByName("Elephant")
+    if not elephant then
+        log("KG boost skipped: no Elephant pet found.")
+        return 0
+    end
+
+    setSinglePetSelection(Config.Pets.KgBoostTeam, elephant)
+    local currentKg = petKg(elephant)
+    local stopAt = tonumber(Config.Pets.KgBoostStopAt) or 5.4
+    if currentKg >= stopAt then
+        log(("KG boost stopped: Elephant is %.2fkg / %.2fkg."):format(currentKg, stopAt))
+        return 0
+    end
+
+    for _, entry in ipairs(selectedEntries("Pets", Config.Pets.KgBoostTeam)) do
         local uuid = entry.Uuid
         if uuid then
             local ok = callRemote("PetBoostService", "Weight", uuid)
@@ -2438,8 +2502,10 @@ do
     toggle(keep, "Keep Matching Mutations", Config.Hatch.KeepMutatedPets, function(v) Config.Hatch.KeepMutatedPets = v end)
     multiselect(keep, "Keep Mutations", function() return Options.Mutations end, Config.Hatch.KeepMutations, nil)
     local teams = section(hatch, "Hatch Teams")
-    multiselect(teams, "Egg Hatch Team", function() return Options.Pets end, Config.Hatch.HatchTeam, nil)
-    multiselect(teams, "Seal Hatch Team", function() return Options.Pets end, Config.Hatch.SealTeam, nil)
+    multiselect(teams, "Egg Hatch Reduction Team", function() return Options.Pets end, Config.Hatch.HatchReductionTeam, nil)
+    multiselect(teams, "Seal Team", function() return Options.Pets end, Config.Hatch.SealTeam, nil)
+    multiselect(teams, "Koi Team", function() return Options.Pets end, Config.Hatch.KoiTeam, nil)
+    multiselect(teams, "Bronto Team", function() return Options.Pets end, Config.Hatch.BrontoTeam, nil)
 end
 
 do
@@ -2453,9 +2519,12 @@ do
     input(timing, "Feed Interval", Config.Pets.FeedInterval, function(v) Config.Pets.FeedInterval = math.max(0.5, tonumber(v) or 2) end)
     input(timing, "Level Interval", Config.Pets.LevelInterval, function(v) Config.Pets.LevelInterval = math.max(1, tonumber(v) or 5) end)
     input(timing, "KG Boost Interval", Config.Pets.KgBoostInterval, function(v) Config.Pets.KgBoostInterval = math.max(1, tonumber(v) or 5) end)
+    input(timing, "Stop KG Boost At", Config.Pets.KgBoostStopAt, function(v) Config.Pets.KgBoostStopAt = math.max(0.1, tonumber(v) or 5.4) end)
+
+    local selected = section(pets, "Pet Selection")
+    multiselect(selected, "Pets To Feed", function() return Options.Pets end, Config.Pets.SelectedPets, nil)
 
     local teams = section(pets, "Pet Teams")
-    multiselect(teams, "Feed Team", function() return Options.Pets end, Config.Pets.FeedTeam, nil)
     multiselect(teams, "Leveling Team", function() return Options.Pets end, Config.Pets.LevelTeam, nil)
     multiselect(teams, "KG Boost Team", function() return Options.Pets end, Config.Pets.KgBoostTeam, nil)
 end
