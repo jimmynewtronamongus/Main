@@ -1231,6 +1231,20 @@ local function eggTimerTextInfo(egg)
     return nil, nil
 end
 
+local function formatDuration(seconds)
+    seconds = math.max(0, math.floor(tonumber(seconds) or 0))
+    local hours = math.floor(seconds / 3600)
+    local minutes = math.floor((seconds % 3600) / 60)
+    local secs = seconds % 60
+    if hours > 0 then
+        return ("%dh %02dm"):format(hours, minutes)
+    end
+    if minutes > 0 then
+        return ("%dm %02ds"):format(minutes, secs)
+    end
+    return tostring(secs) .. "s"
+end
+
 local function eggReadyInfo(egg)
     local signal = State.EggSignals[egg] or State.EggSignalKeys[eggSignalKey(egg)]
     if signal and signal.Ready == true then
@@ -1253,7 +1267,7 @@ local function eggReadyInfo(egg)
             if value <= now then
                 return true, key
             end
-            return false, ("%s %.0fs"):format(key, value - now)
+            return false, formatDuration(value - now), value - now
         end
     end
 
@@ -1263,7 +1277,7 @@ local function eggReadyInfo(egg)
             if value <= 0 then
                 return true, key
             end
-            return false, ("%s %.0fs"):format(key, value)
+            return false, formatDuration(value), value
         end
     end
 
@@ -1278,12 +1292,12 @@ local function eggReadyInfo(egg)
             if readyTime <= now then
                 return true, "ReadyTime"
             end
-            return false, ("ReadyTime %.0fs"):format(readyTime - now)
+            return false, formatDuration(readyTime - now), readyTime - now
         end
         if readyTime <= 0 then
             return true, "ReadyTime"
         end
-        return false, ("ReadyTime %.0fs"):format(readyTime)
+        return false, formatDuration(readyTime), readyTime
     end
 
     if signal and signal.Progress then
@@ -1517,7 +1531,7 @@ function updateEggEsp()
                 billboard.AlwaysOnTop = true
                 billboard.LightInfluence = 0
                 billboard.MaxDistance = 700
-                billboard.Size = UDim2.fromOffset(170, 54)
+                billboard.Size = UDim2.fromOffset(190, 58)
                 billboard.StudsOffset = Vector3.new(0, 3.2, 0)
                 billboard.Adornee = adornee
                 billboard.Parent = screenGui
@@ -1571,8 +1585,8 @@ function updateEggEsp()
                     stateText = stateText .. " | " .. petName
                 elseif ready then
                     stateText = stateText .. " | Pet unknown"
-                elseif readyReason and readyReason ~= "no ready signal" then
-                    stateText = stateText .. " | " .. readyReason
+                else
+                    stateText = stateText .. " | " .. tostring(readyReason or "time unknown")
                 end
                 adornments.Label.Text = ("%s\n%s"):format(eggDisplayName(egg), stateText)
             end
