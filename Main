@@ -856,6 +856,43 @@ local function eggDisplayName(egg)
     return egg.Name
 end
 
+local function isLikelyEggName(value)
+    return normalizedEggText(value):find("egg", 1, true) ~= nil
+end
+
+local function eggPredictedPetName(egg)
+    local keys = {
+        "PetName", "PetType", "HatchedPet", "HatchPet", "PredictedPet",
+        "ResultPet", "RewardPet", "NextPet", "CurrentPet", "Pet",
+    }
+
+    for _, key in ipairs(keys) do
+        local ok, value = pcall(function()
+            return egg:GetAttribute(key)
+        end)
+        if ok and value and tostring(value) ~= "" and not isLikelyEggName(value) then
+            return tostring(value)
+        end
+        local child = egg:FindFirstChild(key)
+        if child and child:IsA("ValueBase")
+            and child.Value
+            and tostring(child.Value) ~= ""
+            and not isLikelyEggName(child.Value)
+        then
+            return tostring(child.Value)
+        end
+    end
+
+    local haystack = normalizedEggText(textOf(egg))
+    for _, petName in ipairs(Options.Pets or {}) do
+        local needle = normalizedEggText(petName)
+        if needle ~= "" and not isLikelyEggName(petName) and haystack:find(needle, 1, true) then
+            return petName
+        end
+    end
+    return nil
+end
+
 local function eggMatchesSelection(egg, selected)
     local names = selectedNames(selected)
     if #names == 0 then
@@ -1144,7 +1181,14 @@ local function updateEggEsp()
             end
             if adornments.Label then
                 adornments.Label.TextColor3 = color
-                adornments.Label.Text = ("%s\n%s"):format(eggDisplayName(egg), ready and "READY" or "Growing")
+                local petName = ready and eggPredictedPetName(egg)
+                local stateText = ready and "READY" or "Growing"
+                if petName then
+                    stateText = stateText .. " | " .. petName
+                elseif ready then
+                    stateText = stateText .. " | Pet unknown"
+                end
+                adornments.Label.Text = ("%s\n%s"):format(eggDisplayName(egg), stateText)
             end
         end
     end
