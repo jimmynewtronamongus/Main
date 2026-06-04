@@ -1245,6 +1245,35 @@ local function formatDuration(seconds)
     return tostring(secs) .. "s"
 end
 
+local function progressEta(signal)
+    if not signal or not signal.Progress or signal.Progress >= 0.999 then
+        return nil
+    end
+
+    local previousProgress = signal.LastProgress
+    local previousAt = signal.LastProgressAt
+    if (not previousProgress or not previousAt)
+        and signal.FirstProgress
+        and signal.FirstProgressAt
+        and signal.FirstProgress < signal.Progress
+    then
+        previousProgress = signal.FirstProgress
+        previousAt = signal.FirstProgressAt
+    end
+
+    if not previousProgress or not previousAt then
+        return nil
+    end
+
+    local progressDelta = signal.Progress - previousProgress
+    local timeDelta = (signal.ProgressAt or os.clock()) - previousAt
+    if progressDelta <= 0 or timeDelta <= 0 then
+        return nil
+    end
+
+    return math.max(0, (1 - signal.Progress) / (progressDelta / timeDelta))
+end
+
 local function eggReadyInfo(egg)
     local signal = State.EggSignals[egg] or State.EggSignalKeys[eggSignalKey(egg)]
     if signal and signal.Ready == true then
@@ -1304,7 +1333,11 @@ local function eggReadyInfo(egg)
         if signal.Progress >= 0.999 then
             return true, "PetEggService progress"
         end
-        return false, ("progress %d%%"):format(math.floor(signal.Progress * 100))
+        local eta = progressEta(signal)
+        if eta then
+            return false, formatDuration(eta), eta
+        end
+        return false, ("estimating time (%d%%)"):format(math.floor(signal.Progress * 100))
     end
 
     return false, "no ready signal"
@@ -1411,16 +1444,25 @@ local function noteEggSignal(egg, ready, reason, progress)
         return
     end
     local signal = State.EggSignals[egg] or {}
+    local now = os.clock()
     if ready ~= nil then
         signal.Ready = ready
     end
     if reason then
         signal.Reason = reason
     end
+    progress = tonumber(progress)
     if progress then
+        if not signal.FirstProgress or progress < signal.FirstProgress then
+            signal.FirstProgress = progress
+            signal.FirstProgressAt = now
+        end
+        signal.LastProgress = signal.Progress
+        signal.LastProgressAt = signal.ProgressAt
         signal.Progress = progress
+        signal.ProgressAt = now
     end
-    signal.UpdatedAt = os.clock()
+    signal.UpdatedAt = now
     State.EggSignals[egg] = signal
     State.EggSignalKeys[eggSignalKey(egg)] = signal
 end
