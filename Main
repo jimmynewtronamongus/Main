@@ -126,12 +126,17 @@ local DefaultSeedPacks = {
     "Ancient Seed Pack", "Zen Seed Pack", "Gourmet Seed Pack",
 }
 
+local DefaultMutations = {
+    "Spirit Sparkle", "Peppermint", "Blossoming",
+}
+
 local Options = {
     Eggs = {},
     Seeds = {},
     Pets = {},
     Fruits = {},
     SeedPacks = {},
+    Mutations = {},
     Shops = {
         "Seed Shop", "Gear Shop", "Egg Shop", "Cosmetic Shop",
         "Event Merchant", "Traveling Merchant", "Garden Coin Shop",
@@ -153,6 +158,13 @@ local Config = {
         AutoPlaceEggs = false,
         EggEsp = true,
         SelectedEggs = {},
+        KeepMutatedPets = true,
+        KeepMutations = {
+            ["Spirit Sparkle"] = true,
+            Peppermint = true,
+            Blossoming = true,
+            __order = {"Spirit Sparkle", "Peppermint", "Blossoming"},
+        },
         HatchInterval = 1.5,
         PlaceInterval = 8,
         MaxEggsPlaced = MAX_EGGS_PLACED,
@@ -226,6 +238,22 @@ local function selectedNames(selected)
         end
     end
     return names
+end
+
+local function setSelectionFromList(selected, list)
+    selected = selected or {}
+    for key in pairs(selected) do
+        selected[key] = nil
+    end
+    selected.__order = {}
+    for _, value in ipairs(list or {}) do
+        value = tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        if value ~= "" and not selected[value] then
+            selected[value] = true
+            selected.__order[#selected.__order + 1] = value
+        end
+    end
+    return selected
 end
 
 local function hasSelection(selected, name)
@@ -306,6 +334,7 @@ local Theme = {
 local SectionDescriptions = {
     Status = "Scan your backpack, character, and placed pets before running automations.",
     Hatch = "Choose eggs, place available egg tools, and hatch ready physical eggs.",
+    ["Keep Hatched Pets"] = "Favorite newly hatched pets when their mutation matches your keep list.",
     Pets = "Run pet feed, level, and favorite actions on selected pets. Empty selections mean all.",
     Shops = "Choose shop groups to run. Manual run buttons are useful for testing first.",
     ["Rewards & Packs"] = "Claim eligible reward tracks and open selected seed packs.",
@@ -495,6 +524,76 @@ local function firstUuid(instance)
     return nil
 end
 
+local function normalizedName(value)
+    return tostring(value or "")
+        :lower()
+        :gsub("[^%w]+", "")
+end
+
+local function addUnique(list, seen, value)
+    value = tostring(value or "")
+    if value == "" then
+        return
+    end
+    local key = normalizedName(value)
+    if key ~= "" and not seen[key] then
+        seen[key] = true
+        list[#list + 1] = value
+    end
+end
+
+local function petMutationNames(instance)
+    local names = {}
+    local seen = {}
+    if not instance then
+        return names
+    end
+
+    local ok, attrs = pcall(function()
+        return instance:GetAttributes()
+    end)
+    if ok then
+        for key, value in pairs(attrs) do
+            local keyText = tostring(key)
+            local valueText = tostring(value)
+            local lowerKey = keyText:lower()
+            if lowerKey:find("mutation", 1, true) or lowerKey:find("variant", 1, true) or lowerKey:find("trait", 1, true) then
+                if type(value) == "boolean" then
+                    if value then addUnique(names, seen, keyText) end
+                else
+                    addUnique(names, seen, valueText)
+                end
+            end
+        end
+    end
+
+    for _, descendant in ipairs(instance:GetDescendants()) do
+        if descendant:IsA("StringValue") or descendant:IsA("NumberValue") or descendant:IsA("BoolValue") then
+            local lowerName = descendant.Name:lower()
+            if lowerName:find("mutation", 1, true) or lowerName:find("variant", 1, true) or lowerName:find("trait", 1, true) then
+                if descendant:IsA("BoolValue") then
+                    if descendant.Value then addUnique(names, seen, descendant.Name) end
+                else
+                    addUnique(names, seen, descendant.Value)
+                end
+            end
+        end
+    end
+
+    local text = normalizedName(textOf(instance))
+    for _, mutation in ipairs(DefaultMutations) do
+        if text:find(normalizedName(mutation), 1, true) then
+            addUnique(names, seen, mutation)
+        end
+    end
+    for mutation in pairs((Config and Config.Hatch and Config.Hatch.KeepMutations) or {}) do
+        if mutation ~= "__order" and text:find(normalizedName(mutation), 1, true) then
+            addUnique(names, seen, mutation)
+        end
+    end
+    return names
+end
+
 local function addEntry(bucket, displayName, instance)
     displayName = tostring(displayName or instance.Name)
     local entry = {
@@ -547,6 +646,14 @@ local function refreshInventory()
                             seen[bucket .. item.Name] = true
                             Options[bucket][#Options[bucket] + 1] = item.Name
                         end
+                        if bucket == "Pets" then
+                            for _, mutation in ipairs(petMutationNames(item)) do
+                                if not seen["Mutations" .. mutation] then
+                                    seen["Mutations" .. mutation] = true
+                                    Options.Mutations[#Options.Mutations + 1] = mutation
+                                end
+                            end
+                        end
                     end
                 end
             end
@@ -561,6 +668,12 @@ local function refreshInventory()
             if not seen["Pets" .. pet.Name] then
                 seen["Pets" .. pet.Name] = true
                 Options.Pets[#Options.Pets + 1] = pet.Name
+            end
+            for _, mutation in ipairs(petMutationNames(pet)) do
+                if not seen["Mutations" .. mutation] then
+                    seen["Mutations" .. mutation] = true
+                    Options.Mutations[#Options.Mutations + 1] = mutation
+                end
             end
         end
     end
@@ -578,6 +691,18 @@ local function refreshInventory()
     for _, fallback in ipairs(DefaultSeedPacks) do
         if not seen["SeedPacks" .. fallback] then
             Options.SeedPacks[#Options.SeedPacks + 1] = fallback
+        end
+    end
+    for _, fallback in ipairs(DefaultMutations) do
+        if not seen["Mutations" .. fallback] then
+            seen["Mutations" .. fallback] = true
+            Options.Mutations[#Options.Mutations + 1] = fallback
+        end
+    end
+    for mutation in pairs(Config.Hatch.KeepMutations or {}) do
+        if mutation ~= "__order" and not seen["Mutations" .. mutation] then
+            seen["Mutations" .. mutation] = true
+            Options.Mutations[#Options.Mutations + 1] = mutation
         end
     end
 
@@ -627,6 +752,79 @@ local function selectedEntries(bucket, selected)
         end
     end
     return out
+end
+
+local function mutationMatchesKeep(mutations)
+    local selected = Config.Hatch.KeepMutations or {}
+    for _, mutation in ipairs(mutations or {}) do
+        local mutationKey = normalizedName(mutation)
+        for selectedName, enabled in pairs(selected) do
+            if selectedName ~= "__order" and enabled and mutationKey == normalizedName(selectedName) then
+                return mutation
+            end
+        end
+    end
+    return nil
+end
+
+local function petEntryKey(entry)
+    if entry.Uuid then
+        return "uuid:" .. entry.Uuid
+    end
+    if entry.Instance then
+        local ok, debugId = pcall(function()
+            return entry.Instance:GetDebugId()
+        end)
+        if ok and debugId then
+            return "instance:" .. debugId
+        end
+        return "instance:" .. entry.Instance:GetFullName()
+    end
+    return "name:" .. tostring(entry.Name)
+end
+
+local function capturePetKeys()
+    local keys = {}
+    refreshInventory()
+    for _, entry in ipairs(Inventory.Pets or {}) do
+        keys[petEntryKey(entry)] = true
+    end
+    return keys
+end
+
+local function favoritePetEntry(entry)
+    local variants = {}
+    if entry.Uuid then
+        variants[#variants + 1] = {entry.Uuid, true}
+        variants[#variants + 1] = {entry.Uuid}
+    end
+    if entry.Instance then
+        variants[#variants + 1] = {entry.Instance, true}
+        variants[#variants + 1] = {entry.Instance}
+    end
+    return callVariants("FavoriteItem", variants, 0.02)
+end
+
+local function keepMatchingNewPets(previousKeys)
+    if not Config.Hatch.KeepMutatedPets then
+        return
+    end
+    refreshInventory()
+    local kept = 0
+    for _, entry in ipairs(Inventory.Pets or {}) do
+        if not previousKeys[petEntryKey(entry)] then
+            local mutations = petMutationNames(entry.Instance)
+            local match = mutationMatchesKeep(mutations)
+            if match then
+                favoritePetEntry(entry)
+                kept += 1
+                log(("Kept hatched pet %s with mutation %s."):format(entry.Name, match))
+            end
+        end
+    end
+    if kept == 0 then
+        log("Keep mutated pets: no matching newly hatched pet found.")
+    end
 end
 
 local function farmOwnerText(farm)
@@ -1213,10 +1411,15 @@ function Actions.HatchOnce()
         return false
     end
 
+    local previousPetKeys = capturePetKeys()
     local fired = hatchEgg(eggs[1].Egg)
     local name = eggDisplayName(eggs[1].Egg)
     log(fired > 0 and ("Hatch sent " .. fired .. " request(s) for " .. name .. ".") or "Hatch skipped: PetEggService missing.")
-    task.delay(1, refreshInventory)
+    if fired > 0 then
+        task.delay(1.5, function()
+            keepMatchingNewPets(previousPetKeys)
+        end)
+    end
     return fired > 0
 end
 
@@ -1909,6 +2112,35 @@ do
 
     local selected = section(hatch, "Egg Selection")
     multiselect(selected, "Selected Eggs", function() return Options.Eggs end, Config.Hatch.SelectedEggs, nil)
+
+    local keep = section(hatch, "Keep Hatched Pets")
+    toggle(keep, "Keep Matching Mutations", Config.Hatch.KeepMutatedPets, function(v) Config.Hatch.KeepMutatedPets = v end)
+    multiselect(keep, "Keep Mutations", function() return Options.Mutations end, Config.Hatch.KeepMutations, nil)
+    input(keep, "Custom Mutations", table.concat(selectedNames(Config.Hatch.KeepMutations), ", "), function(text)
+        local values = {}
+        for value in tostring(text or ""):gmatch("[^,]+") do
+            values[#values + 1] = value
+        end
+        Config.Hatch.KeepMutations = setSelectionFromList(Config.Hatch.KeepMutations, values)
+        for _, mutation in ipairs(values) do
+            mutation = tostring(mutation or ""):gsub("^%s+", ""):gsub("%s+$", "")
+            if mutation ~= "" then
+                local exists = false
+                for _, option in ipairs(Options.Mutations) do
+                    if normalizedName(option) == normalizedName(mutation) then
+                        exists = true
+                        break
+                    end
+                end
+                if not exists then
+                    Options.Mutations[#Options.Mutations + 1] = mutation
+                end
+            end
+        end
+        for _, refresh in pairs(refreshers) do
+            refresh()
+        end
+    end)
 
     local manual = section(hatch, "Manual Runs")
     button(manual, "Hatch Once", Actions.HatchOnce)
