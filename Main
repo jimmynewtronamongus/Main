@@ -267,6 +267,61 @@ local function hasSelection(selected, name)
     return selected[name] == true
 end
 
+local function cleanItemName(name)
+    return tostring(name or "")
+        :gsub("%s+x%d+$", "")
+        :gsub("%s+X%d+$", "")
+        :gsub("%s+%[X%d+%]", "")
+        :gsub("%s+%[x%d+%]", "")
+        :gsub("%s+%(%d+%)$", "")
+        :gsub("%s+", " ")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
+local function canonicalEggName(name)
+    local cleaned = cleanItemName(name)
+    local lower = cleaned:lower()
+    for _, eggName in ipairs(DefaultEggs) do
+        if lower:find(eggName:lower(), 1, true) then
+            return eggName
+        end
+    end
+    return cleaned
+end
+
+local function hasEggSelection(selected, name)
+    local order = selected and selected.__order
+    if not order or #order == 0 then
+        return true
+    end
+    local haystack = canonicalEggName(name):lower()
+    for _, selectedName in ipairs(order) do
+        if selected[selectedName] then
+            local needle = canonicalEggName(selectedName):lower()
+            if haystack == needle
+                or haystack:find(needle, 1, true)
+                or needle:find(haystack, 1, true)
+            then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function normalizeEggSelection()
+    local names = selectedNames(Config.Hatch.SelectedEggs)
+    if #names == 0 then
+        return
+    end
+    local cleaned = {}
+    for _, name in ipairs(names) do
+        cleaned[#cleaned + 1] = canonicalEggName(name)
+    end
+    Config.Hatch.SelectedEggs = setSelectionFromList(Config.Hatch.SelectedEggs, cleaned)
+end
+
 local function mergeConfig(target, source)
     if type(target) ~= "table" or type(source) ~= "table" then
         return
@@ -310,6 +365,7 @@ local function saveConfigSoon()
 end
 
 loadConfig()
+normalizeEggSelection()
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "GAGMainUI"
@@ -644,10 +700,11 @@ local function refreshInventory()
                         bucket = "Pets"
                     end
                     if bucket then
-                        addEntry(Inventory[bucket], item.Name, item)
-                        if not seen[bucket .. item.Name] then
-                            seen[bucket .. item.Name] = true
-                            Options[bucket][#Options[bucket] + 1] = item.Name
+                        local displayName = bucket == "Eggs" and canonicalEggName(item.Name) or item.Name
+                        addEntry(Inventory[bucket], displayName, item)
+                        if not seen[bucket .. displayName] then
+                            seen[bucket .. displayName] = true
+                            Options[bucket][#Options[bucket] + 1] = displayName
                         end
                         if bucket == "Pets" then
                             for _, mutation in ipairs(petMutationNames(item)) do
@@ -686,6 +743,7 @@ local function refreshInventory()
             Options.Eggs[#Options.Eggs + 1] = fallback
         end
     end
+    normalizeEggSelection()
     for _, fallback in ipairs(DefaultSeeds) do
         if not seen["Seeds" .. fallback] then
             Options.Seeds[#Options.Seeds + 1] = fallback
@@ -750,7 +808,8 @@ local function selectedEntries(bucket, selected)
     local out = {}
     local empty = #(selectedNames(selected)) == 0
     for _, entry in ipairs(Inventory[bucket] or {}) do
-        if empty or hasSelection(selected, entry.Name) then
+        local selectedMatch = bucket == "Eggs" and hasEggSelection(selected, entry.Name) or hasSelection(selected, entry.Name)
+        if empty or selectedMatch then
             out[#out + 1] = entry
         end
     end
@@ -938,6 +997,10 @@ function Actions.AutoBuyOnce()
     local eggs = selectedNames(Config.Hatch.SelectedEggs)
     if #eggs == 0 then
         eggs = DefaultEggs
+    else
+        for index, name in ipairs(eggs) do
+            eggs[index] = canonicalEggName(name)
+        end
     end
 
     for _, shop in ipairs(shops) do
@@ -1095,19 +1158,9 @@ local function eggPredictedPetName(egg)
 end
 
 local function eggMatchesSelection(egg, selected)
-    local names = selectedNames(selected)
-    if #names == 0 then
-        return true
-    end
-
-    local haystack = normalizedEggText(egg.Name .. " " .. eggDisplayName(egg) .. " " .. textOf(egg))
-    for _, selectedName in ipairs(names) do
-        local needle = normalizedEggText(selectedName)
-        if needle ~= "" and haystack:find(needle, 1, true) then
-            return true
-        end
-    end
-    return false
+    return hasEggSelection(selected, egg.Name)
+        or hasEggSelection(selected, eggDisplayName(egg))
+        or hasEggSelection(selected, textOf(egg))
 end
 
 local function readEggField(egg, key)
