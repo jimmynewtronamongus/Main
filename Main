@@ -1485,6 +1485,15 @@ local function cleanPredictedPetText(value)
         or lower:find("restock", 1, true)
         or lower:find("purchase", 1, true)
         or lower:find("buy", 1, true)
+        or lower:find("boost", 1, true)
+        or lower:find("feed", 1, true)
+        or lower:find("level", 1, true)
+        or lower:find("cooldown", 1, true)
+        or lower:find("timer", 1, true)
+        or lower:find("time left", 1, true)
+        or lower:find("remaining", 1, true)
+        or lower:find("equip", 1, true)
+        or lower:find("team", 1, true)
         or lower:match("^x%s*%d+$")
         or lower:match("^%d+%s*x$")
         or lower:match("^x%d+%s+stock$")
@@ -1496,6 +1505,8 @@ local function cleanPredictedPetText(value)
         or lower:find("unknown", 1, true)
         or lower:match("^%d+%s*:%s*%d+")
         or lower:match("^%d+%s*[smhd]$")
+        or lower:match("^%d+%s*[dhms]%s+%d+%s*[dhms]$")
+        or lower:match("^%d+%s*[dhms]%s*%d+%s*[dhms]$")
         or not lower:find("%a")
     then
         return nil
@@ -1626,8 +1637,17 @@ local function eggSignalKey(egg)
     return name .. "@" .. egg:GetFullName()
 end
 
-local function durationTextSeconds(text)
+local function durationTextSeconds(text, allowPlain)
     local lower = tostring(text or ""):lower()
+    if lower:find("stock", 1, true)
+        or lower:find("shop", 1, true)
+        or lower:find("price", 1, true)
+        or lower:find("boost", 1, true)
+        or lower:find("feed", 1, true)
+        or lower:find("level", 1, true)
+    then
+        return nil
+    end
     local colonTimer = lower:match("(%d+%s*:%s*%d+%s*:%s*%d+)") or lower:match("(%d+%s*:%s*%d+)")
     if colonTimer then
         local parts = {}
@@ -1660,7 +1680,7 @@ local function durationTextSeconds(text)
         return total
     end
 
-    local plain = lower:match("^%s*(%d+)%s*$")
+    local plain = allowPlain and lower:match("^%s*(%d+)%s*$")
     if plain then
         return tonumber(plain)
     end
@@ -1685,9 +1705,9 @@ local function eggTimerTextInfo(egg)
                 or context:find("ready", 1, true)
                 or context:find("status", 1, true)
                 or context:find("grow", 1, true)
-                or durationTextSeconds(text) ~= nil
+                or durationTextSeconds(text, false) ~= nil
             if looksRelevant then
-                local seconds = durationTextSeconds(text)
+                local seconds = durationTextSeconds(text, false)
                 if seconds and seconds <= 0 then
                     return true, "timer done"
                 elseif seconds then
@@ -1813,7 +1833,7 @@ local function eggReadyInfo(egg)
 
     for _, key in ipairs({"TimeLeft", "TimeRemaining", "HatchTimeLeft", "HatchTimeRemaining", "Remaining", "Cooldown"}) do
         local raw = readEggField(egg, key)
-        local value = tonumber(raw) or durationTextSeconds(raw)
+        local value = tonumber(raw) or durationTextSeconds(raw, true)
         if value then
             if value <= 0 then
                 return true, key
@@ -2020,17 +2040,22 @@ local function noteEggReveal(egg, petName, petKgLabel, source)
     if petName and cleanPredictedPetText(petName) ~= petName then
         return
     end
+    if typeof(egg) ~= "Instance" then
+        return
+    end
+    egg = canonicalEggInstance(egg)
+    local existing = State.EggReveals[egg] or State.EggRevealKeys[eggSignalKey(egg)]
+    if existing and existing.Name and existing.Kg and (not petName or not petKgLabel) then
+        return
+    end
     local reveal = {
         Name = petName,
         Kg = petKgLabel,
         Source = source or "text",
         At = os.clock(),
     }
-    if typeof(egg) == "Instance" then
-        egg = canonicalEggInstance(egg)
-        State.EggReveals[egg] = reveal
-        State.EggRevealKeys[eggSignalKey(egg)] = reveal
-    end
+    State.EggReveals[egg] = reveal
+    State.EggRevealKeys[eggSignalKey(egg)] = reveal
     if petName then
         State.LastEggReveal = reveal
     end
@@ -2038,12 +2063,8 @@ end
 
 local function cachedEggReveal(egg)
     local reveal = State.EggReveals[egg] or State.EggRevealKeys[eggSignalKey(egg)]
-    if reveal and os.clock() - (reveal.At or 0) <= 120 then
+    if reveal and os.clock() - (reveal.At or 0) <= 600 then
         return reveal.Name, reveal.Kg
-    end
-    local last = State.LastEggReveal
-    if last and os.clock() - (last.At or 0) <= 12 then
-        return last.Name, last.Kg
     end
     return nil, nil
 end
@@ -2371,11 +2392,14 @@ function updateEggEsp()
                 adornments.Label.TextColor3 = color
                 local petName, petKgLabel
                 if ready then
-                    petName, petKgLabel = eggPredictedPetInfo(egg)
+                    petName, petKgLabel = cachedEggReveal(egg)
                     if not petName or not petKgLabel then
-                        local cachedName, cachedKg = cachedEggReveal(egg)
-                        petName = petName or cachedName
-                        petKgLabel = petKgLabel or cachedKg
+                        local predictedName, predictedKg = eggPredictedPetInfo(egg)
+                        petName = petName or predictedName
+                        petKgLabel = petKgLabel or predictedKg
+                        if predictedName or predictedKg then
+                            noteEggReveal(egg, predictedName, predictedKg, "egg info")
+                        end
                     end
                 end
                 local stateText
