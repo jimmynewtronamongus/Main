@@ -1765,21 +1765,26 @@ local function eggPredictedPetInfo(egg)
 
     for _, descendant in ipairs(egg:GetDescendants()) do
         if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
+            local parent = descendant.Parent
+            local context = normalizedName(
+                tostring(descendant.Name or "") .. " "
+                .. tostring(parent and parent.Name or "") .. " "
+                .. tostring(parent and parent.Parent and parent.Parent.Name or "")
+            )
+            local relevant = context:find("pet", 1, true)
+                or context:find("result", 1, true)
+                or context:find("reward", 1, true)
+                or context:find("weight", 1, true)
+                or context:find("kg", 1, true)
+            if not relevant then
+                continue
+            end
             local text = tostring(descendant.Text or "")
             foundKg = foundKg or petKgText(text)
             for line in text:gmatch("[^\n\r|]+") do
                 foundName = foundName or cleanPredictedPetText(line)
             end
             foundName = foundName or cleanPredictedPetText(text)
-        end
-    end
-
-    local haystack = normalizedEggText(textOf(egg))
-    for _, petName in ipairs(Options.Pets or {}) do
-        local needle = normalizedEggText(petName)
-        if needle ~= "" and not isLikelyEggName(petName) and haystack:find(needle, 1, true) then
-            foundName = foundName or petName
-            break
         end
     end
     return foundName, foundKg
