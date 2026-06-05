@@ -116,6 +116,25 @@ local DefaultEggs = {
     "Gourmet Egg",
 }
 
+local DefaultEggPets = {
+    ["Common Egg"] = {"Dog", "Bunny", "Golden Lab"},
+    ["Uncommon Egg"] = {"Black Bunny", "Chicken", "Cat", "Deer"},
+    ["Rare Egg"] = {"Orange Tabby", "Spotted Deer", "Pig", "Rooster", "Monkey"},
+    ["Legendary Egg"] = {"Cow", "Silver Monkey", "Sea Otter", "Turtle", "Polar Bear"},
+    ["Mythical Egg"] = {"Grey Mouse", "Brown Mouse", "Squirrel", "Red Giant Ant", "Red Fox"},
+    ["Bug Egg"] = {"Snail", "Giant Ant", "Caterpillar", "Praying Mantis", "Dragonfly"},
+    ["Bee Egg"] = {"Bee", "Honey Bee", "Bear Bee", "Petal Bee", "Queen Bee"},
+    ["Common Bee Egg"] = {"Bee", "Honey Bee"},
+    ["Night Egg"] = {"Hedgehog", "Mole", "Frog", "Echo Frog", "Night Owl"},
+    ["Paradise Egg"] = {"Ostrich", "Peacock", "Capybara", "Scarlet Macaw", "Mimic Octopus"},
+    ["Oasis Egg"] = {"Meerkat", "Sand Snake", "Axolotl", "Hyacinth Macaw", "Fennec Fox"},
+    ["Anti Bee Egg"] = {"Wasp", "Tarantula Hawk", "Moth", "Butterfly", "Disco Bee"},
+    ["Dinosaur Egg"] = {"Raptor", "Triceratops", "Stegosaurus", "Pterodactyl", "T-Rex"},
+    ["Primal Egg"] = {"Parasaurolophus", "Iguanodon", "Pachycephalosaurus", "Dilophosaurus", "Ankylosaurus", "Spinosaurus"},
+    ["Zen Egg"] = {"Shiba Inu", "Nihonzaru", "Tanuki", "Kappa", "Kitsune"},
+    ["Gourmet Egg"] = {"Bagel Bunny", "Pancake Mole", "Sushi Bear", "Spaghetti Sloth", "French Fry Ferret"},
+}
+
 local DefaultEventItems = {
     "Honey Sprinkler", "Bee Egg", "Flower Seed Pack", "Nectarine",
     "Hive Fruit", "Seed Pack", "Night Seed Pack", "Ancient Seed Pack",
@@ -170,6 +189,7 @@ local Config = {
         RuleKeepPets = "",
         RuleSellPets = "",
         PetRulesByEgg = {},
+        KnownPetsByEgg = {},
         AlwaysKeepBaseKg = 3,
         SellUnkeptHatchedPets = false,
         SellOnlyLevelOne = true,
@@ -1164,6 +1184,36 @@ local function ensureEggPetRules()
     return Config.Hatch.PetRulesByEgg
 end
 
+local function ensureKnownEggPets()
+    if type(Config.Hatch.KnownPetsByEgg) ~= "table" then
+        Config.Hatch.KnownPetsByEgg = {}
+    end
+    return Config.Hatch.KnownPetsByEgg
+end
+
+local function ensureEggPetRule(eggName)
+    eggName = canonicalEggName(eggName)
+    if eggName == "" then
+        return nil
+    end
+    local rules = ensureEggPetRules()
+    local rule = rules[eggName]
+    if type(rule) ~= "table" then
+        rule = {}
+        rules[eggName] = rule
+    end
+    if type(rule.Keep) ~= "table" then
+        rule.Keep = {}
+    end
+    if type(rule.Sell) ~= "table" then
+        rule.Sell = {}
+    end
+    if type(rule.PetRules) ~= "table" then
+        rule.PetRules = {}
+    end
+    return rule
+end
+
 local function setEggPetRule()
     local eggName = canonicalEggName(Config.Hatch.RuleEggName)
     if eggName == "" then
@@ -1171,16 +1221,78 @@ local function setEggPetRule()
     end
     local keepPets = csvList(Config.Hatch.RuleKeepPets)
     local sellPets = csvList(Config.Hatch.RuleSellPets)
-    ensureEggPetRules()[eggName] = {
-        Keep = keepPets,
-        Sell = sellPets,
-    }
+    local rule = ensureEggPetRule(eggName)
+    rule.Keep = keepPets
+    rule.Sell = sellPets
 end
 
 local function eggPetRule(eggName)
     local rules = ensureEggPetRules()
     local canonical = canonicalEggName(eggName)
     return rules[canonical] or rules[tostring(eggName or "")]
+end
+
+local function possiblePetsForEgg(eggName)
+    eggName = canonicalEggName(eggName)
+    local pets = {}
+    local seen = {}
+    for _, petName in ipairs(DefaultEggPets[eggName] or {}) do
+        addUnique(pets, seen, petName)
+    end
+    local known = ensureKnownEggPets()[eggName]
+    if type(known) == "table" then
+        for _, petName in ipairs(known) do
+            addUnique(pets, seen, petName)
+        end
+    end
+    local rule = eggPetRule(eggName)
+    if type(rule) == "table" then
+        for _, petName in ipairs(rule.Keep or {}) do
+            addUnique(pets, seen, petName)
+        end
+        for _, petName in ipairs(rule.Sell or {}) do
+            addUnique(pets, seen, petName)
+        end
+        if type(rule.PetRules) == "table" then
+            for petName in pairs(rule.PetRules) do
+                addUnique(pets, seen, petName)
+            end
+        end
+    end
+    sortOptions(pets)
+    return pets
+end
+
+local function rememberEggPet(eggName, petName)
+    eggName = canonicalEggName(eggName)
+    petName = petBaseName(petName)
+    if eggName == "" or petName == "" then
+        return
+    end
+    local known = ensureKnownEggPets()
+    known[eggName] = known[eggName] or {}
+    local seen = {}
+    for _, existing in ipairs(known[eggName]) do
+        seen[normalizedName(existing)] = true
+    end
+    if not seen[normalizedName(petName)] then
+        known[eggName][#known[eggName] + 1] = petName
+        sortOptions(known[eggName])
+    end
+end
+
+local function eggSpecificPetRule(rule, entry)
+    if type(rule) ~= "table" or type(rule.PetRules) ~= "table" then
+        return nil, nil
+    end
+    local haystack = normalizedName(petBaseName(entry and entry.Name))
+    for petName, petRule in pairs(rule.PetRules) do
+        local needle = normalizedName(petName)
+        if needle ~= "" and (haystack == needle or haystack:find(needle, 1, true)) then
+            return petRule, petName
+        end
+    end
+    return nil, nil
 end
 
 local function sellPetEntry(entry)
@@ -1213,12 +1325,20 @@ local function processNewlyHatchedPets(previousKeys, eggName)
             local mutations = petMutationNames(entry.Instance)
             local match = mutationMatchesKeep(mutations)
             local baseKg = petBaseKg(entry)
-            local age = petAge(entry)
             local level = petLevel(entry)
             local ruleKeepName = petNameMatchesList(entry, keepNames)
             local ruleSellName = petNameMatchesList(entry, sellNames)
+            local petRule, petRuleName = eggSpecificPetRule(rule, entry)
+            local petRuleKeep = type(petRule) == "table" and petRule.Keep == true
+            local petRuleSell = type(petRule) == "table" and petRule.Keep == false
+            local petRuleMinKg = math.max(0, tonumber(type(petRule) == "table" and petRule.MinKg) or 0)
             local keepReason
-            if ruleKeepName then
+            rememberEggPet(eggName, entry.Name)
+            if petRuleSell then
+                keepReason = nil
+            elseif petRuleKeep and baseKg >= petRuleMinKg then
+                keepReason = ("%s %.2fkg+"):format(tostring(petRuleName or entry.Name), petRuleMinKg)
+            elseif ruleKeepName then
                 keepReason = "egg rule " .. tostring(ruleKeepName)
             elseif baseKg >= (tonumber(Config.Hatch.AlwaysKeepBaseKg) or 3) then
                 keepReason = ("base %.2fkg"):format(baseKg)
@@ -1230,12 +1350,14 @@ local function processNewlyHatchedPets(previousKeys, eggName)
                 favoritePetEntry(entry)
                 kept += 1
                 log(("Kept hatched pet %s from %s (%s)."):format(entry.Name, tostring(eggName or "egg"), keepReason))
-            elseif Config.Hatch.SellUnkeptHatchedPets and ((not hasSellRules) or ruleSellName) then
+            elseif Config.Hatch.SellUnkeptHatchedPets and (petRuleSell or (not hasSellRules) or ruleSellName) then
                 if (not Config.Hatch.SellOnlyLevelOne) or level <= 1 then
                     local fired = sellPetEntry(entry)
                     if fired > 0 then
                         sold += 1
-                        local reason = ruleSellName and ("sell rule " .. tostring(ruleSellName)) or "unkept hatch"
+                        local reason = petRuleSell and ("pet rule " .. tostring(petRuleName or entry.Name))
+                            or (ruleSellName and ("sell rule " .. tostring(ruleSellName)))
+                            or "unkept hatch"
                         log(("Sold newly hatched pet %s from %s (%s)."):format(entry.Name, tostring(eggName or "egg"), reason))
                     end
                 else
@@ -3239,6 +3361,158 @@ local function multiselect(parent, text, optionGetter, selected, callback)
     rebuild()
 end
 
+local function eggPetRuleEditor(parent)
+    local container = Instance.new("Frame")
+    container.BackgroundTransparency = 1
+    container.Size = UDim2.new(1, 0, 0, 10)
+    container.AutomaticSize = Enum.AutomaticSize.Y
+    container.Parent = parent
+
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 6)
+    layout.Parent = container
+
+    local function selectedEggNamesForRules()
+        local eggs = selectedNames(Config.Hatch.SelectedEggs)
+        if #eggs == 0 and tostring(Config.Hatch.RuleEggName or "") ~= "" then
+            eggs = {Config.Hatch.RuleEggName}
+        end
+        for index, eggName in ipairs(eggs) do
+            eggs[index] = canonicalEggName(eggName)
+        end
+        return eggs
+    end
+
+    local function addText(text, size, color)
+        local label = Instance.new("TextLabel")
+        label.BackgroundTransparency = 1
+        label.Size = UDim2.new(1, 0, 0, size or 22)
+        label.Font = Enum.Font.GothamBold
+        label.Text = text
+        label.TextColor3 = color or Theme.Text
+        label.TextSize = 12
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.TextWrapped = true
+        label.Parent = container
+        return label
+    end
+
+    local function renderState(button, petRule)
+        local keep = type(petRule) == "table" and petRule.Keep
+        if keep == true then
+            button.Text = "Keep"
+            button.BackgroundColor3 = Theme.Accent
+            button.TextColor3 = Theme.Background
+        elseif keep == false then
+            button.Text = "Sell"
+            button.BackgroundColor3 = Theme.Danger
+            button.TextColor3 = Theme.Text
+        else
+            button.Text = "Auto"
+            button.BackgroundColor3 = Theme.Input
+            button.TextColor3 = Theme.Text
+        end
+    end
+
+    local function rebuild()
+        for _, child in ipairs(container:GetChildren()) do
+            if child ~= layout then
+                child:Destroy()
+            end
+        end
+
+        local eggs = selectedEggNamesForRules()
+        if #eggs == 0 then
+            addText("Select an egg above to edit hatch pet keep rules.", 34, Theme.Muted)
+            return
+        end
+
+        for _, eggName in ipairs(eggs) do
+            local rule = ensureEggPetRule(eggName)
+            addText(eggName .. " Pets", 22, Theme.Accent)
+            local pets = possiblePetsForEgg(eggName)
+            if #pets == 0 then
+                addText("No pet pool known yet. Hatch once to learn pets for this egg.", 34, Theme.Muted)
+            end
+            for _, petName in ipairs(pets) do
+                local petRules = rule.PetRules
+                petRules[petName] = petRules[petName] or {}
+                local petRule = petRules[petName]
+                local r = row(container, 50)
+
+                local nameLabel = Instance.new("TextLabel")
+                nameLabel.BackgroundTransparency = 1
+                nameLabel.Position = UDim2.fromOffset(12, 0)
+                nameLabel.Size = UDim2.new(0.48, -12, 1, 0)
+                nameLabel.Font = Enum.Font.GothamMedium
+                nameLabel.Text = petName
+                nameLabel.TextColor3 = Theme.Text
+                nameLabel.TextSize = 12
+                nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+                nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+                nameLabel.Parent = r
+
+                local state = Instance.new("TextButton")
+                state.AnchorPoint = Vector2.new(0, 0.5)
+                state.Position = UDim2.new(0.5, 2, 0.5, 0)
+                state.Size = UDim2.new(0.22, -8, 0, 28)
+                state.BorderSizePixel = 0
+                state.Font = Enum.Font.GothamBold
+                state.TextSize = 10
+                state.Parent = r
+                corner(state, 6)
+                stroke(state, Theme.StrokeSoft, 1)
+                renderState(state, petRule)
+                state.MouseButton1Click:Connect(function()
+                    if petRule.Keep == nil then
+                        petRule.Keep = true
+                    elseif petRule.Keep == true then
+                        petRule.Keep = false
+                    else
+                        petRule.Keep = nil
+                    end
+                    renderState(state, petRule)
+                    saveConfigSoon()
+                end)
+
+                local kg = Instance.new("TextBox")
+                kg.AnchorPoint = Vector2.new(1, 0.5)
+                kg.Position = UDim2.new(1, -10, 0.5, 0)
+                kg.Size = UDim2.new(0.28, -8, 0, 28)
+                kg.BackgroundColor3 = Theme.Input
+                kg.BorderSizePixel = 0
+                kg.ClearTextOnFocus = false
+                kg.Font = Enum.Font.Gotham
+                kg.Text = petRule.MinKg and tostring(petRule.MinKg) or ""
+                kg.PlaceholderText = "Min KG"
+                kg.TextColor3 = Theme.Text
+                kg.PlaceholderColor3 = Theme.Muted
+                kg.TextSize = 12
+                kg.TextXAlignment = Enum.TextXAlignment.Left
+                kg.Parent = r
+                corner(kg, 6)
+                stroke(kg, Theme.StrokeSoft, 1)
+                pad(kg, 8)
+                kg.FocusLost:Connect(function()
+                    local value = tonumber(kg.Text)
+                    petRule.MinKg = value and math.max(0, value) or nil
+                    kg.Text = petRule.MinKg and tostring(petRule.MinKg) or ""
+                    saveConfigSoon()
+                end)
+            end
+        end
+    end
+
+    refreshers[#refreshers + 1] = rebuild
+    rebuild()
+end
+
+local function refreshUiControls()
+    for _, refresh in pairs(refreshers) do
+        pcall(refresh)
+    end
+end
+
 local dashboard = page("Dashboard")
 local hatch = page("Hatch")
 local pets = page("Pets")
@@ -3300,22 +3574,26 @@ do
     input(timing, "Max Eggs Placed", Config.Hatch.MaxEggsPlaced, function(v) Config.Hatch.MaxEggsPlaced = math.max(1, math.floor(tonumber(v) or MAX_EGGS_PLACED)) end)
 
     local selected = section(hatch, "Egg Selection")
-    multiselect(selected, "Selected Eggs", function() return Options.Eggs end, Config.Hatch.SelectedEggs, nil)
+    multiselect(selected, "Selected Eggs", function() return Options.Eggs end, Config.Hatch.SelectedEggs, refreshUiControls)
 
     local keep = section(hatch, "Keep Hatched Pets")
     toggle(keep, "Keep Matching Mutations", Config.Hatch.KeepMutatedPets, function(v) Config.Hatch.KeepMutatedPets = v end)
     multiselect(keep, "Keep Mutations", function() return Options.Mutations end, Config.Hatch.KeepMutations, nil)
+    eggPetRuleEditor(keep)
     input(keep, "Egg Rule Name", Config.Hatch.RuleEggName, function(v)
         Config.Hatch.RuleEggName = canonicalEggName(v)
         setEggPetRule()
+        refreshUiControls()
     end)
     input(keep, "Keep Pets For Egg", Config.Hatch.RuleKeepPets, function(v)
         Config.Hatch.RuleKeepPets = v
         setEggPetRule()
+        refreshUiControls()
     end)
     input(keep, "Sell Pets For Egg", Config.Hatch.RuleSellPets, function(v)
         Config.Hatch.RuleSellPets = v
         setEggPetRule()
+        refreshUiControls()
     end)
     input(keep, "Always Keep Base KG", Config.Hatch.AlwaysKeepBaseKg, function(v) Config.Hatch.AlwaysKeepBaseKg = math.max(0, tonumber(v) or 3) end)
     toggle(keep, "Only Sell New Hatched", Config.Hatch.SellUnkeptHatchedPets, function(v) Config.Hatch.SellUnkeptHatchedPets = v end)
