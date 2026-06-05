@@ -201,12 +201,10 @@ local Config = {
         BuyInterval = 3,
         SelectedShops = {},
     },
-    Rewards = {
+    Utility = {
         AutoOpenPacks = false,
         PackInterval = 12,
         SelectedPacks = {},
-    },
-    Utility = {
         AutoCollectFruit = false,
         FruitInterval = 2,
         AutoSellFruit = false,
@@ -381,6 +379,17 @@ local function loadConfig()
     end)
     if ok and type(decoded) == "table" then
         mergeConfig(Config, decoded, false)
+        if type(decoded.Rewards) == "table" then
+            if decoded.Rewards.AutoOpenPacks ~= nil then
+                Config.Utility.AutoOpenPacks = decoded.Rewards.AutoOpenPacks
+            end
+            if decoded.Rewards.PackInterval ~= nil then
+                Config.Utility.PackInterval = decoded.Rewards.PackInterval
+            end
+            if type(decoded.Rewards.SelectedPacks) == "table" then
+                Config.Utility.SelectedPacks = decoded.Rewards.SelectedPacks
+            end
+        end
     end
 end
 
@@ -433,7 +442,7 @@ local SectionDescriptions = {
     ["Keep Hatched Pets"] = "Favorite newly hatched pets by egg rule, mutation, name, or base KG.",
     Pets = "Run pet feed, level, and favorite actions on selected pets. Empty selections mean all.",
     Shops = "Choose shop groups to run on the buy timer.",
-    ["Rewards & Packs"] = "Open selected seed packs on a timer.",
+    ["Seed Packs"] = "Open selected seed packs on a timer.",
     ["Hatch Teams"] = "Seal, Koi, Bronto, and Elephant-style support teams auto-pick the highest KG matching pet found.",
     ["Pet Teams"] = "Feed uses selected pets. Leveling is manual selection. KG boost auto-requires your highest KG Elephant.",
     Utility = "Fruit, planting, rebirth, visual cleanup, and general helpers.",
@@ -1427,7 +1436,7 @@ end
 
 function Actions.OpenSeedPacksOnce()
     local fired = 0
-    local entries = selectedEntries("SeedPacks", Config.Rewards.SelectedPacks)
+    local entries = selectedEntries("SeedPacks", Config.Utility.SelectedPacks)
     for _, entry in ipairs(entries) do
         equip(entry.Instance)
         task.wait(0.03)
@@ -3237,7 +3246,6 @@ local dashboard = page("Dashboard")
 local hatch = page("Hatch")
 local pets = page("Pets")
 local shops = page("Shops")
-local rewards = page("Rewards")
 local utility = page("Utility")
 local logs = page("Logs")
 
@@ -3245,9 +3253,8 @@ navButton("Dashboard", 1, "Overview")
 navButton("Hatch", 2, "Eggs")
 navButton("Pets", 3, "Feed / level")
 navButton("Shops", 4, "Buying")
-navButton("Rewards", 5, "Seed packs")
-navButton("Utility", 6, "Farm tools")
-navButton("Logs", 7, "Output")
+navButton("Utility", 5, "Farm tools")
+navButton("Logs", 6, "Output")
 
 do
     local s = section(dashboard, "Status")
@@ -3357,16 +3364,11 @@ do
 end
 
 do
-    local auto = section(rewards, "Rewards & Packs")
-    toggle(auto, "Auto Open Seed Packs", Config.Rewards.AutoOpenPacks, function(v) Config.Rewards.AutoOpenPacks = v end)
-    input(auto, "Pack Interval", Config.Rewards.PackInterval, function(v) Config.Rewards.PackInterval = math.max(3, tonumber(v) or 12) end)
+    local packs = section(utility, "Seed Packs")
+    toggle(packs, "Auto Open Seed Packs", Config.Utility.AutoOpenPacks, function(v) Config.Utility.AutoOpenPacks = v end)
+    input(packs, "Pack Interval", Config.Utility.PackInterval, function(v) Config.Utility.PackInterval = math.max(3, tonumber(v) or 12) end)
+    multiselect(packs, "Selected Seed Packs", function() return Options.SeedPacks end, Config.Utility.SelectedPacks, nil)
 
-    local selected = section(rewards, "Pack Selection")
-    multiselect(selected, "Selected Seed Packs", function() return Options.SeedPacks end, Config.Rewards.SelectedPacks, nil)
-
-end
-
-do
     local farm = section(utility, "Utility")
     toggle(farm, "Auto Collect Fruit", Config.Utility.AutoCollectFruit, function(v) Config.Utility.AutoCollectFruit = v end)
     toggle(farm, "Auto Sell Fruit", Config.Utility.AutoSellFruit, function(v) Config.Utility.AutoSellFruit = v end)
@@ -3493,8 +3495,8 @@ task.spawn(function()
         if Config.Shops.AutoBuy then
             tickAction("Buy", tonumber(Config.Shops.BuyInterval) or 3, "Buy", Actions.AutoBuyOnce)
         end
-        if Config.Rewards.AutoOpenPacks then
-            tickAction("Packs", tonumber(Config.Rewards.PackInterval) or 12, "Packs", Actions.OpenSeedPacksOnce)
+        if Config.Utility.AutoOpenPacks then
+            tickAction("Packs", tonumber(Config.Utility.PackInterval) or 12, "Packs", Actions.OpenSeedPacksOnce)
         end
         if Config.Utility.AutoCollectFruit then
             tickAction("Fruit", tonumber(Config.Utility.FruitInterval) or 2, "Fruit", Actions.CollectFruitOnce)
@@ -3523,7 +3525,7 @@ task.spawn(function()
         if Config.Pets.AutoKgBoost then active += 1 end
         if Config.Pets.AutoFavorite then active += 1 end
         if Config.Shops.AutoBuy then active += 1 end
-        if Config.Rewards.AutoOpenPacks then active += 1 end
+        if Config.Utility.AutoOpenPacks then active += 1 end
         if Config.Utility.AutoCollectFruit then active += 1 end
         if Config.Utility.AutoSellFruit then active += 1 end
         if Config.Utility.AutoPlantSeeds then active += 1 end
