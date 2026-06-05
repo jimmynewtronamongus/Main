@@ -1396,6 +1396,10 @@ local function eggDisplayName(egg)
         if child and child:IsA("ValueBase") and child.Value and tostring(child.Value) ~= "" then
             return tostring(child.Value)
         end
+        local deepChild = egg:FindFirstChild(key, true)
+        if deepChild and deepChild:IsA("ValueBase") and deepChild.Value and tostring(deepChild.Value) ~= "" then
+            return tostring(deepChild.Value)
+        end
     end
     return egg.Name
 end
@@ -1453,6 +1457,10 @@ local function readEggField(egg, key)
     local child = egg:FindFirstChild(key)
     if child and child:IsA("ValueBase") then
         return child.Value
+    end
+    local deepChild = egg:FindFirstChild(key, true)
+    if deepChild and deepChild:IsA("ValueBase") then
+        return deepChild.Value
     end
     return nil
 end
@@ -1555,9 +1563,6 @@ end
 
 local function eggReadyInfo(egg)
     local signal = State.EggSignals[egg] or State.EggSignalKeys[eggSignalKey(egg)]
-    if signal and signal.Ready == true then
-        return true, signal.Reason or "ready remote"
-    end
 
     for _, key in ipairs({"Ready", "CanHatch", "HatchReady", "IsReady"}) do
         local value = readEggField(egg, key)
@@ -1608,6 +1613,10 @@ local function eggReadyInfo(egg)
         return false, formatDuration(readyTime), readyTime
     end
 
+    if signal and signal.Ready == true then
+        return true, signal.Reason or "ready remote"
+    end
+
     if signal and signal.Progress then
         if signal.Progress >= 0.999 then
             return true, "PetEggService progress"
@@ -1656,33 +1665,96 @@ local function hasEggAncestor(instance, root)
     return false
 end
 
+local function physicalObjectRoot(instance, searchRoot)
+    local current = instance
+    local parent = current and current.Parent
+    while parent and parent ~= searchRoot do
+        current = parent
+        parent = current.Parent
+    end
+    return current
+end
+
+local function isEggTargetCandidate(instance)
+    if not instance or not instance.Parent then
+        return false
+    end
+    if readEggField(instance, "EggName")
+        or readEggField(instance, "PetEggName")
+        or readEggField(instance, "HatchAt")
+        or readEggField(instance, "ReadyAt")
+        or readEggField(instance, "ReadyTime")
+        or readEggField(instance, "TimeLeft")
+        or readEggField(instance, "HatchTimeLeft")
+    then
+        return true
+    end
+    if instance:FindFirstChild("PetEgg", true) then
+        return true
+    end
+    local lower = normalizedEggText(instance.Name .. " " .. eggDisplayName(instance) .. " " .. textOf(instance))
+    return lower:find("egg", 1, true) ~= nil
+end
+
+local function eggTargetCandidates(selected)
+    local targets = {}
+    local seen = {}
+    local checked = {}
+    for _, searchRoot in ipairs(eggRoots()) do
+        for _, child in ipairs(searchRoot:GetChildren()) do
+            checked[child] = isEggTargetCandidate(child)
+            if not seen[child] and checked[child] and eggMatchesSelection(child, selected) then
+                seen[child] = true
+                targets[#targets + 1] = child
+            end
+        end
+        for _, descendant in ipairs(searchRoot:GetDescendants()) do
+            if descendant:IsA("Model") or descendant:IsA("BasePart") or descendant:IsA("Folder") then
+                local root = physicalObjectRoot(descendant, searchRoot)
+                if root and not seen[root] then
+                    if checked[root] == nil then
+                        checked[root] = isEggTargetCandidate(root)
+                    end
+                    if checked[root] and eggMatchesSelection(root, selected) then
+                        seen[root] = true
+                        targets[#targets + 1] = root
+                    end
+                end
+            end
+        end
+    end
+    return targets
+end
+
+local function canonicalEggInstance(instance)
+    if typeof(instance) ~= "Instance" then
+        return instance
+    end
+    for _, searchRoot in ipairs(eggRoots()) do
+        if instance == searchRoot then
+            return instance
+        end
+        if instance:IsDescendantOf(searchRoot) then
+            return physicalObjectRoot(instance, searchRoot)
+        end
+    end
+    return instance
+end
+
 local function findReadyEggs()
     local selected = Config.Hatch.SelectedEggs
     local found = {}
-    local seen = {}
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local rootPos = root and root.Position
 
-    for _, searchRoot in ipairs(eggRoots()) do
-        for _, descendant in ipairs(searchRoot:GetDescendants()) do
-            if not seen[descendant]
-                and (descendant:IsA("Model") or descendant:IsA("BasePart") or descendant:IsA("Folder"))
-            then
-                seen[descendant] = true
-                local lower = normalizedEggText(descendant.Name .. " " .. textOf(descendant))
-                if lower:find("egg", 1, true)
-                    and not hasEggAncestor(descendant, searchRoot)
-                    and eggMatchesSelection(descendant, selected)
-                    and eggReady(descendant)
-                then
-                    local pos = eggWorldPosition(descendant)
-                    local distance = (rootPos and pos) and (pos - rootPos).Magnitude or 0
-                    found[#found + 1] = {
-                        Egg = descendant,
-                        Distance = distance,
-                    }
-                end
-            end
+    for _, egg in ipairs(eggTargetCandidates(selected)) do
+        if eggReady(egg) then
+            local pos = eggWorldPosition(egg)
+            local distance = (rootPos and pos) and (pos - rootPos).Magnitude or 0
+            found[#found + 1] = {
+                Egg = egg,
+                Distance = distance,
+            }
         end
     end
 
@@ -1693,22 +1765,7 @@ local function findReadyEggs()
 end
 
 local function countPhysicalEggs()
-    local count = 0
-    local seen = {}
-    for _, searchRoot in ipairs(eggRoots()) do
-        for _, descendant in ipairs(searchRoot:GetDescendants()) do
-            if not seen[descendant]
-                and (descendant:IsA("Model") or descendant:IsA("Folder"))
-            then
-                seen[descendant] = true
-                local lower = normalizedEggText(descendant.Name .. " " .. textOf(descendant))
-                if lower:find("egg", 1, true) and not hasEggAncestor(descendant, searchRoot) then
-                    count += 1
-                end
-            end
-        end
-    end
-    return count
+    return #eggTargetCandidates(nil)
 end
 
 local function hatchEgg(egg)
@@ -1722,6 +1779,7 @@ local function noteEggSignal(egg, ready, reason, progress)
     if typeof(egg) ~= "Instance" then
         return
     end
+    egg = canonicalEggInstance(egg)
     local signal = State.EggSignals[egg] or {}
     local now = os.clock()
     if ready ~= nil then
@@ -1767,7 +1825,13 @@ local function installEggRemoteListeners()
     if readyRemote and readyRemote:IsA("RemoteEvent") then
         readyRemote.OnClientEvent:Connect(function(egg, ready)
             if typeof(egg) == "Instance" then
-                noteEggSignal(egg, ready ~= false, "EggReadyToHatch_RE")
+                local readyState = nil
+                if ready == true then
+                    readyState = true
+                elseif ready == false then
+                    readyState = false
+                end
+                noteEggSignal(egg, readyState, "EggReadyToHatch_RE")
                 task.defer(updateEggEsp)
             end
         end)
@@ -1812,24 +1876,7 @@ local function clearEggEsp()
 end
 
 local function eggEspTargets()
-    local selected = Config.Hatch.SelectedEggs
-    local targets = {}
-    local seen = {}
-    for _, searchRoot in ipairs(eggRoots()) do
-        for _, descendant in ipairs(searchRoot:GetDescendants()) do
-            if not seen[descendant] and (descendant:IsA("Model") or descendant:IsA("BasePart")) then
-                seen[descendant] = true
-                local lower = normalizedEggText(descendant.Name .. " " .. textOf(descendant))
-                if lower:find("egg", 1, true)
-                    and not hasEggAncestor(descendant, searchRoot)
-                    and eggMatchesSelection(descendant, selected)
-                then
-                    targets[#targets + 1] = descendant
-                end
-            end
-        end
-    end
-    return targets
+    return eggTargetCandidates(Config.Hatch.SelectedEggs)
 end
 
 function updateEggEsp()
@@ -1851,32 +1898,36 @@ function updateEggEsp()
                 billboard.Name = "GAGEggESP"
                 billboard.AlwaysOnTop = true
                 billboard.LightInfluence = 0
-                billboard.MaxDistance = 700
-                billboard.Size = UDim2.fromOffset(190, 58)
-                billboard.StudsOffset = Vector3.new(0, 3.2, 0)
+                billboard.MaxDistance = 450
+                billboard.Size = UDim2.fromOffset(148, 38)
+                billboard.StudsOffset = Vector3.new(0, 2.35, 0)
                 billboard.Adornee = adornee
                 billboard.Parent = screenGui
 
                 local label = Instance.new("TextLabel")
                 label.Name = "Label"
                 label.BackgroundColor3 = Color3.fromRGB(8, 12, 14)
-                label.BackgroundTransparency = 0.18
+                label.BackgroundTransparency = 0.42
                 label.BorderSizePixel = 0
                 label.Size = UDim2.fromScale(1, 1)
                 label.Font = Enum.Font.GothamBold
                 label.TextColor3 = Theme.Text
-                label.TextSize = 12
+                label.TextSize = 10
                 label.TextWrapped = true
                 label.Parent = billboard
-                corner(label, 7)
-                stroke(label, Theme.StrokeSoft, 1)
+                corner(label, 5)
+                local outline = Instance.new("UIStroke")
+                outline.Color = Theme.StrokeSoft
+                outline.Thickness = 1
+                outline.Transparency = 0.55
+                outline.Parent = label
 
                 local highlight = Instance.new("Highlight")
                 highlight.Name = "GAGEggESPHighlight"
                 highlight.Adornee = egg
                 highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                highlight.FillTransparency = 0.78
-                highlight.OutlineTransparency = 0
+                highlight.FillTransparency = 0.92
+                highlight.OutlineTransparency = 0.72
                 highlight.Parent = screenGui
 
                 adornments.Billboard = billboard
