@@ -1492,6 +1492,39 @@ local function eggSignalKey(egg)
     return name .. "@" .. egg:GetFullName()
 end
 
+local function durationTextSeconds(text)
+    local lower = tostring(text or ""):lower()
+    local colonTimer = lower:match("(%d+%s*:%s*%d+%s*:%s*%d+)") or lower:match("(%d+%s*:%s*%d+)")
+    if colonTimer then
+        local parts = {}
+        for part in colonTimer:gmatch("%d+") do
+            parts[#parts + 1] = tonumber(part) or 0
+        end
+        if #parts == 3 then
+            return parts[1] * 3600 + parts[2] * 60 + parts[3]
+        end
+        if #parts == 2 then
+            return parts[1] * 60 + parts[2]
+        end
+    end
+
+    local total
+    for amount, unit in lower:gmatch("(%d+)%s*([dhms])") do
+        total = total or 0
+        amount = tonumber(amount) or 0
+        if unit == "d" then
+            total += amount * 86400
+        elseif unit == "h" then
+            total += amount * 3600
+        elseif unit == "m" then
+            total += amount * 60
+        elseif unit == "s" then
+            total += amount
+        end
+    end
+    return total
+end
+
 local function eggTimerTextInfo(egg)
     for _, descendant in ipairs(egg:GetDescendants()) do
         if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
@@ -1503,8 +1536,12 @@ local function eggTimerTextInfo(egg)
             then
                 local text = tostring(descendant.Text or "")
                 local lower = text:lower()
-                if lower:match("%d+:%d+") or lower:match("%d+%s*[smh]") then
-                    return false, text
+                local seconds = durationTextSeconds(text)
+                if seconds then
+                    if seconds <= 0 then
+                        return true, "timer done"
+                    end
+                    return false, text, seconds
                 end
                 if lower:find("ready", 1, true)
                     and not lower:find("not ready", 1, true)
@@ -1563,13 +1600,14 @@ end
 
 local function eggReadyInfo(egg)
     local signal = State.EggSignals[egg] or State.EggSignalKeys[eggSignalKey(egg)]
+    local falseReadyReason
 
     for _, key in ipairs({"Ready", "CanHatch", "HatchReady", "IsReady"}) do
         local value = readEggField(egg, key)
         if value == true then
             return true, key
         elseif value == false then
-            return false, key .. "=false"
+            falseReadyReason = falseReadyReason or (key .. "=false")
         end
     end
 
@@ -1577,6 +1615,9 @@ local function eggReadyInfo(egg)
     for _, key in ipairs({"HatchAt", "ReadyAt", "HatchReadyAt", "FinishTime", "EndTime"}) do
         local value = tonumber(readEggField(egg, key))
         if value then
+            if value > 100000000000 then
+                value = value / 1000
+            end
             if value <= now then
                 return true, key
             end
@@ -1585,7 +1626,8 @@ local function eggReadyInfo(egg)
     end
 
     for _, key in ipairs({"TimeLeft", "TimeRemaining", "HatchTimeLeft", "HatchTimeRemaining", "Remaining", "Cooldown"}) do
-        local value = tonumber(readEggField(egg, key))
+        local raw = readEggField(egg, key)
+        local value = tonumber(raw) or durationTextSeconds(raw)
         if value then
             if value <= 0 then
                 return true, key
@@ -1594,14 +1636,17 @@ local function eggReadyInfo(egg)
         end
     end
 
-    local textReady, textReason = eggTimerTextInfo(egg)
+    local textReady, textReason, textSeconds = eggTimerTextInfo(egg)
     if textReady ~= nil then
-        return textReady, textReason
+        return textReady, textReason, textSeconds
     end
 
     local readyTime = tonumber(readEggField(egg, "ReadyTime"))
     if readyTime then
         if readyTime > 100000 then
+            if readyTime > 100000000000 then
+                readyTime = readyTime / 1000
+            end
             if readyTime <= now then
                 return true, "ReadyTime"
             end
@@ -1615,6 +1660,10 @@ local function eggReadyInfo(egg)
 
     if signal and signal.Ready == true then
         return true, signal.Reason or "ready remote"
+    end
+
+    if falseReadyReason then
+        return false, falseReadyReason
     end
 
     if signal and signal.Progress then
