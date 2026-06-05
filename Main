@@ -1411,26 +1411,105 @@ local function isLikelyEggName(value)
     return normalizedEggText(value):find("egg", 1, true) ~= nil
 end
 
-local function eggPredictedPetName(egg)
+local function petKgText(value, assumeKg)
+    if assumeKg and tonumber(value) then
+        return ("%.2f KG"):format(tonumber(value))
+    end
+    local kg = petKgFromName(value)
+    if kg and kg > 0 then
+        return ("%.2f KG"):format(kg)
+    end
+    return nil
+end
+
+local function cleanPredictedPetText(value)
+    local text = tostring(value or "")
+        :gsub("[%[%]()]", " ")
+        :gsub("%d+%.?%d*%s*[Kk][Gg]", " ")
+        :gsub("%d+%.?%d*%%", " ")
+        :gsub("[Ww]eight%s*:?%s*", " ")
+        :gsub("[Pp]et%s*:?%s*", " ")
+        :gsub("[Rr]esult%s*:?%s*", " ")
+        :gsub("[Rr]eward%s*:?%s*", " ")
+        :gsub("[Hh]atched%s*:?%s*", " ")
+        :gsub("%s+", " ")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+    local lower = text:lower()
+    if text == ""
+        or isLikelyEggName(text)
+        or lower:find("ready", 1, true)
+        or lower:find("hatch", 1, true)
+        or lower:find("grow", 1, true)
+        or lower:find("open", 1, true)
+        or lower:find("unknown", 1, true)
+        or lower:match("^%d+%s*:%s*%d+")
+        or lower:match("^%d+%s*[smhd]$")
+        or not lower:find("%a")
+    then
+        return nil
+    end
+    return text
+end
+
+local function eggPredictedPetInfo(egg)
     local keys = {
         "PetName", "PetType", "HatchedPet", "HatchPet", "PredictedPet",
         "ResultPet", "RewardPet", "NextPet", "CurrentPet", "Pet",
+        "PetWeight", "PetKG", "PetKg", "HatchedPetWeight", "ResultWeight",
+        "Weight", "KG", "Kg", "BaseWeight", "BaseKG", "BaseKg",
     }
+    local foundName
+    local foundKg
 
     for _, key in ipairs(keys) do
+        local lowerKey = tostring(key):lower()
+        local assumesKg = lowerKey:find("weight", 1, true) or lowerKey:find("kg", 1, true)
         local ok, value = pcall(function()
             return egg:GetAttribute(key)
         end)
-        if ok and value and tostring(value) ~= "" and not isLikelyEggName(value) then
-            return tostring(value)
+        if ok and value and tostring(value) ~= "" then
+            foundKg = foundKg or petKgText(value, assumesKg)
+            foundName = foundName or cleanPredictedPetText(value)
         end
-        local child = egg:FindFirstChild(key)
+        local child = egg:FindFirstChild(key, true)
         if child and child:IsA("ValueBase")
             and child.Value
             and tostring(child.Value) ~= ""
-            and not isLikelyEggName(child.Value)
         then
-            return tostring(child.Value)
+            foundKg = foundKg or petKgText(child.Value, assumesKg)
+            foundName = foundName or cleanPredictedPetText(child.Value)
+        end
+    end
+
+    local ok, attrs = pcall(function()
+        return egg:GetAttributes()
+    end)
+    if ok then
+        for key, value in pairs(attrs) do
+            local lowerKey = tostring(key):lower()
+            if lowerKey:find("pet", 1, true)
+                or lowerKey:find("result", 1, true)
+                or lowerKey:find("reward", 1, true)
+                or lowerKey:find("weight", 1, true)
+                or lowerKey == "kg"
+                or lowerKey == "basekg"
+            then
+                local assumesKg = lowerKey:find("weight", 1, true) or lowerKey:find("kg", 1, true)
+                foundKg = foundKg or petKgText(value, assumesKg)
+                foundName = foundName or cleanPredictedPetText(value)
+            end
+        end
+    end
+
+    for _, descendant in ipairs(egg:GetDescendants()) do
+        if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
+            local text = tostring(descendant.Text or "")
+            foundKg = foundKg or petKgText(text)
+            for line in text:gmatch("[^\n\r|]+") do
+                foundName = foundName or cleanPredictedPetText(line)
+            end
+            foundName = foundName or cleanPredictedPetText(text)
         end
     end
 
@@ -1438,10 +1517,11 @@ local function eggPredictedPetName(egg)
     for _, petName in ipairs(Options.Pets or {}) do
         local needle = normalizedEggText(petName)
         if needle ~= "" and not isLikelyEggName(petName) and haystack:find(needle, 1, true) then
-            return petName
+            foundName = foundName or petName
+            break
         end
     end
-    return nil
+    return foundName, foundKg
 end
 
 local function eggMatchesSelection(egg, selected)
@@ -2055,10 +2135,16 @@ function updateEggEsp()
             end
             if adornments.Label then
                 adornments.Label.TextColor3 = color
-                local petName = ready and eggPredictedPetName(egg)
+                local petName, petKgLabel
+                if ready then
+                    petName, petKgLabel = eggPredictedPetInfo(egg)
+                end
                 local stateText = ready and "READY" or "Growing"
                 if petName then
                     stateText = stateText .. " | " .. petName
+                    if petKgLabel then
+                        stateText = stateText .. " | " .. petKgLabel
+                    end
                 elseif ready then
                     stateText = stateText .. " | Pet unknown"
                 else
