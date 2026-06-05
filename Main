@@ -1535,6 +1535,8 @@ end
 
 local function eggTimerTextInfo(egg)
     local growingReason
+    local shortestText
+    local shortestSeconds
     for _, descendant in ipairs(egg:GetDescendants()) do
         if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
             local name = descendant.Name:lower()
@@ -1555,7 +1557,10 @@ local function eggTimerTextInfo(egg)
                 if seconds and seconds <= 0 then
                     return true, "timer done"
                 elseif seconds then
-                    growingReason = growingReason or text
+                    if not shortestSeconds or seconds < shortestSeconds then
+                        shortestSeconds = seconds
+                        shortestText = text
+                    end
                 elseif lower:find("ready", 1, true)
                     and not lower:find("not ready", 1, true)
                     and not lower:find("ready in", 1, true)
@@ -1567,6 +1572,9 @@ local function eggTimerTextInfo(egg)
                 end
             end
         end
+    end
+    if shortestSeconds then
+        return false, shortestText or (tostring(shortestSeconds) .. "s"), shortestSeconds
     end
     if growingReason then
         return false, growingReason
