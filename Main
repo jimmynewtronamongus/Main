@@ -2063,10 +2063,32 @@ end
 
 local function cachedEggReveal(egg)
     local reveal = State.EggReveals[egg] or State.EggRevealKeys[eggSignalKey(egg)]
-    if reveal and os.clock() - (reveal.At or 0) <= 600 then
+    if reveal and os.clock() - (reveal.At or 0) <= 3600 then
         return reveal.Name, reveal.Kg
     end
     return nil, nil
+end
+
+local eggEspTargets
+
+local function revealTargetEggFromGui()
+    local best
+    local bestDistance = math.huge
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local rootPos = root and root.Position
+    for _, egg in ipairs(eggEspTargets()) do
+        local ready = eggReady(egg)
+        local cachedName, cachedKg = cachedEggReveal(egg)
+        if ready and (not cachedName or not cachedKg) then
+            local pos = eggWorldPosition(egg)
+            local distance = (rootPos and pos) and (pos - rootPos).Magnitude or 0
+            if distance < bestDistance then
+                best = egg
+                bestDistance = distance
+            end
+        end
+    end
+    return best
 end
 
 local function scanRevealTextObject(object)
@@ -2138,7 +2160,11 @@ local function scanRevealTextObject(object)
 
     local petName, petKgLabel = revealFromTextBlock(block)
     if petName or petKgLabel then
-        noteEggReveal(nearestEggFromInstance(object), petName, petKgLabel, "text hook")
+        local targetEgg = nearestEggFromInstance(object)
+        if not targetEgg and petName and petKgLabel then
+            targetEgg = revealTargetEggFromGui()
+        end
+        noteEggReveal(targetEgg, petName, petKgLabel, "text hook")
     end
 end
 
@@ -2312,7 +2338,7 @@ local function clearEggEsp()
     end
 end
 
-local function eggEspTargets()
+function eggEspTargets()
     return eggTargetCandidates(Config.Hatch.SelectedEggs)
 end
 
@@ -2431,8 +2457,6 @@ function updateEggEsp()
                     end
                 elseif ready then
                     stateText = stateText .. " | Pet unknown"
-                else
-                    stateText = stateText .. " | " .. tostring(readyReason or "time unknown")
                 end
                 adornments.Label.Text = ("%s\n%s"):format(eggDisplayName(egg), stateText)
             end
