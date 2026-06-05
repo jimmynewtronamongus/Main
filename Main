@@ -192,6 +192,7 @@ local Config = {
         KnownPetsByEgg = {},
         AlwaysKeepBaseKg = 3,
         SellUnkeptHatchedPets = false,
+        OnlySellWithSealTeam = false,
         SellOnlyLevelOne = true,
         HatchInterval = 1.5,
         PlaceInterval = 8,
@@ -916,6 +917,21 @@ local function autoSelectSpecificPetTeams()
     setSinglePetSelection(Config.Pets.KgBoostTeam, highestPetByName("Elephant"))
 end
 
+local function sealTeamAvailable()
+    if #(selectedNames(Config.Hatch.SealTeam)) == 0 then
+        return false
+    end
+    for _, entry in ipairs(Inventory.Pets or {}) do
+        if isPetInventoryEntry(entry)
+            and hasSelection(Config.Hatch.SealTeam, entry.Name)
+            and petNameMatches(entry, "Seal")
+        then
+            return true
+        end
+    end
+    return false
+end
+
 local function refreshInventory()
     for key in pairs(Inventory) do
         Inventory[key] = {}
@@ -1320,6 +1336,11 @@ local function processNewlyHatchedPets(previousKeys, eggName)
     local keepNames = rule.Keep or rule.keep or {}
     local sellNames = rule.Sell or rule.sell or {}
     local hasSellRules = type(sellNames) == "table" and #sellNames > 0
+    local canSellNewHatches = Config.Hatch.SellUnkeptHatchedPets
+    if canSellNewHatches and Config.Hatch.OnlySellWithSealTeam and not sealTeamAvailable() then
+        canSellNewHatches = false
+        log("Hatch selling skipped: Only Sell With Seal Team is on, but no selected Seal pet is available.")
+    end
     for _, entry in ipairs(Inventory.Pets or {}) do
         if not previousKeys[petEntryKey(entry)] then
             local mutations = petMutationNames(entry.Instance)
@@ -1350,7 +1371,7 @@ local function processNewlyHatchedPets(previousKeys, eggName)
                 favoritePetEntry(entry)
                 kept += 1
                 log(("Kept hatched pet %s from %s (%s)."):format(entry.Name, tostring(eggName or "egg"), keepReason))
-            elseif Config.Hatch.SellUnkeptHatchedPets and (petRuleSell or (not hasSellRules) or ruleSellName) then
+            elseif canSellNewHatches and (petRuleSell or (not hasSellRules) or ruleSellName) then
                 if (not Config.Hatch.SellOnlyLevelOne) or level <= 1 then
                     local fired = sellPetEntry(entry)
                     if fired > 0 then
@@ -3597,6 +3618,7 @@ do
     end)
     input(keep, "Always Keep Base KG", Config.Hatch.AlwaysKeepBaseKg, function(v) Config.Hatch.AlwaysKeepBaseKg = math.max(0, tonumber(v) or 3) end)
     toggle(keep, "Only Sell New Hatched", Config.Hatch.SellUnkeptHatchedPets, function(v) Config.Hatch.SellUnkeptHatchedPets = v end)
+    toggle(keep, "Only Sell With Seal Team", Config.Hatch.OnlySellWithSealTeam, function(v) Config.Hatch.OnlySellWithSealTeam = v end)
     toggle(keep, "Only Sell Level 1", Config.Hatch.SellOnlyLevelOne, function(v) Config.Hatch.SellOnlyLevelOne = v end)
 
     local teams = section(hatch, "Hatch Teams")
