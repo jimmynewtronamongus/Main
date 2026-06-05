@@ -1478,6 +1478,17 @@ local function cleanPredictedPetText(value)
     local lower = text:lower()
     if text == ""
         or isLikelyEggName(text)
+        or lower:find("stock", 1, true)
+        or lower:find("shop", 1, true)
+        or lower:find("price", 1, true)
+        or lower:find("cost", 1, true)
+        or lower:find("restock", 1, true)
+        or lower:find("purchase", 1, true)
+        or lower:find("buy", 1, true)
+        or lower:match("^x%s*%d+$")
+        or lower:match("^%d+%s*x$")
+        or lower:match("^x%d+%s+stock$")
+        or lower:match("^%d+%s+stock$")
         or lower:find("ready", 1, true)
         or lower:find("hatch", 1, true)
         or lower:find("grow", 1, true)
@@ -1972,6 +1983,14 @@ end
 
 local function revealFromTextBlock(text)
     text = tostring(text or "")
+    local lower = text:lower()
+    if lower:find("stock", 1, true)
+        or lower:find("shop", 1, true)
+        or lower:find("restock", 1, true)
+        or lower:find("purchase", 1, true)
+    then
+        return nil, nil
+    end
     local foundKg = petKgText(text)
     local foundName
     for line in text:gmatch("[^\n\r|]+") do
@@ -1998,6 +2017,9 @@ local function noteEggReveal(egg, petName, petKgLabel, source)
     if not petName and not petKgLabel then
         return
     end
+    if petName and cleanPredictedPetText(petName) ~= petName then
+        return
+    end
     local reveal = {
         Name = petName,
         Kg = petKgLabel,
@@ -2009,7 +2031,9 @@ local function noteEggReveal(egg, petName, petKgLabel, source)
         State.EggReveals[egg] = reveal
         State.EggRevealKeys[eggSignalKey(egg)] = reveal
     end
-    State.LastEggReveal = reveal
+    if petName then
+        State.LastEggReveal = reveal
+    end
 end
 
 local function cachedEggReveal(egg)
@@ -2060,6 +2084,14 @@ local function scanRevealTextObject(object)
         or context:find("reward", 1, true)
         or context:find("kg", 1, true)
         or petKgText(text) ~= nil
+    if context:find("stock", 1, true)
+        or context:find("shop", 1, true)
+        or context:find("restock", 1, true)
+        or context:find("purchase", 1, true)
+        or context:find("price", 1, true)
+    then
+        relevant = false
+    end
     if not relevant then
         return
     end
@@ -2329,7 +2361,7 @@ function updateEggEsp()
                 adornments.Highlight.Adornee = egg
             end
 
-            local ready, readyReason = eggReadyInfo(egg)
+            local ready, readyReason, readySeconds = eggReadyInfo(egg)
             local color = ready and Theme.Accent or Theme.Accent2
             if adornments.Highlight then
                 adornments.Highlight.FillColor = color
@@ -2346,7 +2378,28 @@ function updateEggEsp()
                         petKgLabel = petKgLabel or cachedKg
                     end
                 end
-                local stateText = ready and "READY" or "Growing"
+                local stateText
+                if ready then
+                    stateText = "READY"
+                else
+                    local waitText
+                    if readySeconds then
+                        waitText = formatDuration(readySeconds)
+                    elseif readyReason
+                        and readyReason ~= "no ready signal"
+                        and not tostring(readyReason):lower():find("grow", 1, true)
+                    then
+                        waitText = tostring(readyReason)
+                    else
+                        local signal = State.EggSignals[egg] or State.EggSignalKeys[eggSignalKey(egg)]
+                        if signal and signal.Progress then
+                            waitText = ("estimating (%d%%)"):format(math.floor(math.clamp(signal.Progress, 0, 1) * 100))
+                        else
+                            waitText = "time unknown"
+                        end
+                    end
+                    stateText = "Ready in " .. waitText
+                end
                 if petName then
                     stateText = stateText .. " | " .. petName
                     if petKgLabel then
