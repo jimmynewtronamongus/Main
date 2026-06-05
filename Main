@@ -232,6 +232,11 @@ local State = {
     EggSignals = {},
     EggSignalKeys = {},
     EggRemoteListenersInstalled = false,
+    EggReveals = {},
+    EggRevealKeys = {},
+    LastEggReveal = nil,
+    EggRevealTextConnections = {},
+    EggRevealTextHooked = false,
     LastRebirthAttempt = 0,
     LastRebirthSkipLog = 0,
 }
@@ -1930,6 +1935,166 @@ local function canonicalEggInstance(instance)
     return instance
 end
 
+local function revealFromTextBlock(text)
+    text = tostring(text or "")
+    local foundKg = petKgText(text)
+    local foundName
+    for line in text:gmatch("[^\n\r|]+") do
+        foundKg = foundKg or petKgText(line)
+        foundName = foundName or cleanPredictedPetText(line)
+    end
+    foundName = foundName or cleanPredictedPetText(text)
+    return foundName, foundKg
+end
+
+local function nearestEggFromInstance(instance)
+    if typeof(instance) ~= "Instance" then
+        return nil
+    end
+    for _, searchRoot in ipairs(eggRoots()) do
+        if instance:IsDescendantOf(searchRoot) then
+            return physicalObjectRoot(instance, searchRoot)
+        end
+    end
+    return nil
+end
+
+local function noteEggReveal(egg, petName, petKgLabel, source)
+    if not petName and not petKgLabel then
+        return
+    end
+    local reveal = {
+        Name = petName,
+        Kg = petKgLabel,
+        Source = source or "text",
+        At = os.clock(),
+    }
+    if typeof(egg) == "Instance" then
+        egg = canonicalEggInstance(egg)
+        State.EggReveals[egg] = reveal
+        State.EggRevealKeys[eggSignalKey(egg)] = reveal
+    end
+    State.LastEggReveal = reveal
+end
+
+local function cachedEggReveal(egg)
+    local reveal = State.EggReveals[egg] or State.EggRevealKeys[eggSignalKey(egg)]
+    if reveal and os.clock() - (reveal.At or 0) <= 120 then
+        return reveal.Name, reveal.Kg
+    end
+    local last = State.LastEggReveal
+    if last and os.clock() - (last.At or 0) <= 12 then
+        return last.Name, last.Kg
+    end
+    return nil, nil
+end
+
+local function scanRevealTextObject(object)
+    if not object or (
+        not object:IsA("TextLabel")
+        and not object:IsA("TextButton")
+        and not object:IsA("ProximityPrompt")
+    ) then
+        return
+    end
+    if screenGui and object:IsDescendantOf(screenGui) then
+        return
+    end
+
+    local text = ""
+    if object:IsA("ProximityPrompt") then
+        text = tostring(object.ActionText or "") .. "\n" .. tostring(object.ObjectText or "")
+    else
+        text = tostring(object.Text or "")
+    end
+    local parent = object.Parent
+    local context = normalizedName(
+        tostring(object.Name or "") .. " "
+        .. tostring(parent and parent.Name or "") .. " "
+        .. tostring(parent and parent.Parent and parent.Parent.Name or "") .. " "
+        .. text
+    )
+    if context == "" then
+        return
+    end
+    local relevant = context:find("egg", 1, true)
+        or context:find("pet", 1, true)
+        or context:find("hatch", 1, true)
+        or context:find("ready", 1, true)
+        or context:find("result", 1, true)
+        or context:find("reward", 1, true)
+        or context:find("kg", 1, true)
+        or petKgText(text) ~= nil
+    if not relevant then
+        return
+    end
+
+    local block = text
+    if parent then
+        local added = 0
+        for _, descendant in ipairs(parent:GetDescendants()) do
+            if added >= 12 then
+                break
+            end
+            if descendant ~= object then
+                if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
+                    block ..= "\n" .. tostring(descendant.Text or "")
+                    added += 1
+                elseif descendant:IsA("ProximityPrompt") then
+                    block ..= "\n" .. tostring(descendant.ActionText or "") .. "\n" .. tostring(descendant.ObjectText or "")
+                    added += 1
+                end
+            end
+        end
+    end
+
+    local petName, petKgLabel = revealFromTextBlock(block)
+    if petName or petKgLabel then
+        noteEggReveal(nearestEggFromInstance(object), petName, petKgLabel, "text hook")
+    end
+end
+
+local function hookRevealTextObject(object)
+    if not object or State.EggRevealTextConnections[object] then
+        return
+    end
+    if object:IsA("TextLabel") or object:IsA("TextButton") then
+        State.EggRevealTextConnections[object] = object:GetPropertyChangedSignal("Text"):Connect(function()
+            scanRevealTextObject(object)
+        end)
+        scanRevealTextObject(object)
+    elseif object:IsA("ProximityPrompt") then
+        local actionConnection = object:GetPropertyChangedSignal("ActionText"):Connect(function()
+            scanRevealTextObject(object)
+        end)
+        local objectConnection = object:GetPropertyChangedSignal("ObjectText"):Connect(function()
+            scanRevealTextObject(object)
+        end)
+        State.EggRevealTextConnections[object] = {actionConnection, objectConnection}
+        scanRevealTextObject(object)
+    end
+end
+
+local function installEggRevealTextHooks()
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if playerGui and not State.EggRevealTextHooked then
+        State.EggRevealTextHooked = true
+        State.EggRevealTextConnections[playerGui] = playerGui.DescendantAdded:Connect(hookRevealTextObject)
+        for _, descendant in ipairs(playerGui:GetDescendants()) do
+            hookRevealTextObject(descendant)
+        end
+    end
+
+    for _, root in ipairs(eggRoots()) do
+        if not State.EggRevealTextConnections[root] then
+            State.EggRevealTextConnections[root] = root.DescendantAdded:Connect(hookRevealTextObject)
+        end
+        for _, descendant in ipairs(root:GetDescendants()) do
+            hookRevealTextObject(descendant)
+        end
+    end
+end
+
 local function findReadyEggs()
     local selected = Config.Hatch.SelectedEggs
     local found = {}
@@ -2069,6 +2234,8 @@ function updateEggEsp()
         return
     end
 
+    installEggRevealTextHooks()
+
     local alive = {}
     for _, egg in ipairs(eggEspTargets()) do
         local adornee = eggAdornee(egg)
@@ -2138,6 +2305,11 @@ function updateEggEsp()
                 local petName, petKgLabel
                 if ready then
                     petName, petKgLabel = eggPredictedPetInfo(egg)
+                    if not petName or not petKgLabel then
+                        local cachedName, cachedKg = cachedEggReveal(egg)
+                        petName = petName or cachedName
+                        petKgLabel = petKgLabel or cachedKg
+                    end
                 end
                 local stateText = ready and "READY" or "Growing"
                 if petName then
