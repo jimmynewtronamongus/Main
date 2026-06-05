@@ -3318,7 +3318,7 @@ do
         setEggPetRule()
     end)
     input(keep, "Always Keep Base KG", Config.Hatch.AlwaysKeepBaseKg, function(v) Config.Hatch.AlwaysKeepBaseKg = math.max(0, tonumber(v) or 3) end)
-    toggle(keep, "Sell Unkept New Hatches", Config.Hatch.SellUnkeptHatchedPets, function(v) Config.Hatch.SellUnkeptHatchedPets = v end)
+    toggle(keep, "Only Sell New Hatched", Config.Hatch.SellUnkeptHatchedPets, function(v) Config.Hatch.SellUnkeptHatchedPets = v end)
     toggle(keep, "Only Sell Level 1", Config.Hatch.SellOnlyLevelOne, function(v) Config.Hatch.SellOnlyLevelOne = v end)
 
     local teams = section(hatch, "Hatch Teams")
