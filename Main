@@ -216,6 +216,7 @@ local Config = {
         SelectedSeeds = {},
         AutoRebirth = false,
         RebirthInterval = 10,
+        RebirthCooldown = 14400,
         AntiLag = false,
         RemoveTextures = false,
         AutoReconnect = false,
@@ -231,6 +232,8 @@ local State = {
     EggSignals = {},
     EggSignalKeys = {},
     EggRemoteListenersInstalled = false,
+    LastRebirthAttempt = 0,
+    LastRebirthSkipLog = 0,
 }
 
 local function copyList(list)
@@ -1625,6 +1628,31 @@ local function progressEta(signal)
     return math.max(0, (1 - signal.Progress) / (progressDelta / timeDelta))
 end
 
+local function eggPromptReadyInfo(egg)
+    for _, descendant in ipairs(egg:GetDescendants()) do
+        if descendant:IsA("ProximityPrompt") then
+            local enabled = true
+            pcall(function()
+                enabled = descendant.Enabled
+            end)
+            if enabled then
+                local text = normalizedEggText(
+                    tostring(descendant.Name or "") .. " "
+                    .. tostring(descendant.ActionText or "") .. " "
+                    .. tostring(descendant.ObjectText or "")
+                )
+                if text:find("hatch", 1, true)
+                    or text:find("ready", 1, true)
+                    or text:find("open", 1, true)
+                then
+                    return true, "hatch prompt"
+                end
+            end
+        end
+    end
+    return nil, nil
+end
+
 local function eggReadyInfo(egg)
     local signal = State.EggSignals[egg] or State.EggSignalKeys[eggSignalKey(egg)]
     local falseReadyReason
@@ -1687,6 +1715,11 @@ local function eggReadyInfo(egg)
 
     if signal and signal.Ready == true then
         return true, signal.Reason or "ready remote"
+    end
+
+    local promptReady, promptReason = eggPromptReadyInfo(egg)
+    if promptReady ~= nil then
+        return promptReady, promptReason
     end
 
     if falseReadyReason then
@@ -1901,12 +1934,7 @@ local function installEggRemoteListeners()
     if readyRemote and readyRemote:IsA("RemoteEvent") then
         readyRemote.OnClientEvent:Connect(function(egg, ready)
             if typeof(egg) == "Instance" then
-                local readyState = nil
-                if ready == true then
-                    readyState = true
-                elseif ready == false then
-                    readyState = false
-                end
+                local readyState = ready ~= false
                 noteEggSignal(egg, readyState, "EggReadyToHatch_RE")
                 task.defer(updateEggEsp)
             end
@@ -2258,8 +2286,20 @@ function Actions.PlantSeedsOnce()
 end
 
 function Actions.RebirthOnce()
+    local now = os.time()
+    local cooldown = math.max(60, tonumber(Config.Utility.RebirthCooldown) or 14400)
+    local remaining = cooldown - (now - (State.LastRebirthAttempt or 0))
+    if remaining > 0 then
+        if now - (State.LastRebirthSkipLog or 0) >= 60 then
+            State.LastRebirthSkipLog = now
+            log(("Rebirth skipped: cooldown %s left."):format(formatDuration(remaining)))
+        end
+        return false
+    end
+    State.LastRebirthAttempt = now
     local ok = callRemote("BuyRebirth")
     log(ok and "BuyRebirth sent." or "Rebirth skipped: BuyRebirth missing.")
+    return ok
 end
 
 function Actions.SetAntiLag(enabled)
@@ -2894,6 +2934,7 @@ do
     input(timing, "Fruit Interval", Config.Utility.FruitInterval, function(v) Config.Utility.FruitInterval = math.max(1, tonumber(v) or 2) end)
     input(timing, "Plant Interval", Config.Utility.PlantInterval, function(v) Config.Utility.PlantInterval = math.max(0.2, tonumber(v) or 0.6) end)
     input(timing, "Rebirth Interval", Config.Utility.RebirthInterval, function(v) Config.Utility.RebirthInterval = math.max(1, tonumber(v) or 10) end)
+    input(timing, "Rebirth Cooldown", Config.Utility.RebirthCooldown, function(v) Config.Utility.RebirthCooldown = math.max(60, tonumber(v) or 14400) end)
 
     local selected = section(utility, "Seed Selection")
     multiselect(selected, "Selected Seeds", function() return Options.Seeds end, Config.Utility.SelectedSeeds, nil)
@@ -3022,7 +3063,8 @@ task.spawn(function()
             tickAction("Plant", tonumber(Config.Utility.PlantInterval) or 0.6, "Plant", Actions.PlantSeedsOnce)
         end
         if Config.Utility.AutoRebirth then
-            tickAction("Rebirth", tonumber(Config.Utility.RebirthInterval) or 10, "Rebirth", Actions.RebirthOnce)
+            local rebirthInterval = math.max(tonumber(Config.Utility.RebirthInterval) or 10, tonumber(Config.Utility.RebirthCooldown) or 14400)
+            tickAction("Rebirth", rebirthInterval, "Rebirth", Actions.RebirthOnce)
         end
         if Config.Hatch.EggEsp then
             tickAction("EggEsp", 0.35, "EggEsp", updateEggEsp)
