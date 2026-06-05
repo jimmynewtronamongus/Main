@@ -756,6 +756,35 @@ local function sortOptions(list)
     end)
 end
 
+local function knownPetNameMatches(value)
+    local haystack = normalizedName(value)
+    if haystack == "" then
+        return false
+    end
+    for _, pets in pairs(DefaultEggPets) do
+        for _, petName in ipairs(pets) do
+            local needle = normalizedName(petName)
+            if needle ~= "" and (haystack == needle or haystack:find(needle, 1, true)) then
+                return true
+            end
+        end
+    end
+    local knownByEgg = Config and Config.Hatch and Config.Hatch.KnownPetsByEgg
+    if type(knownByEgg) == "table" then
+        for _, pets in pairs(knownByEgg) do
+            if type(pets) == "table" then
+                for _, petName in ipairs(pets) do
+                    local needle = normalizedName(petName)
+                    if needle ~= "" and (haystack == needle or haystack:find(needle, 1, true)) then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
 local function isPetItem(instance)
     local lowerName = tostring(instance and instance.Name or ""):lower()
     if lowerName:find("egg", 1, true)
@@ -783,25 +812,15 @@ local function isPetItem(instance)
 
     if lower:find("pettool", 1, true)
         or lower:find("petuuid", 1, true)
-        or lower:find("age ", 1, true)
-        or lower:find("[age", 1, true)
+        or lower:find("pettype", 1, true)
     then
         return true
     end
 
-    for _, child in ipairs(instance:GetChildren()) do
-        local childName = child.Name:lower()
-        if childName:find("pet", 1, true)
-            and (
-                child:IsA("LocalScript")
-                or child:IsA("Script")
-                or child:IsA("ModuleScript")
-                or child:IsA("ValueBase")
-                or child:IsA("Folder")
-            )
-        then
-            return true
-        end
+    if (lower:find("age ", 1, true) or lower:find("[age", 1, true))
+        and knownPetNameMatches(instance.Name)
+    then
+        return true
     end
     return false
 end
