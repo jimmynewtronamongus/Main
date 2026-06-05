@@ -761,12 +761,6 @@ local function isPetItem(instance)
         return true
     end
 
-    for _, petName in ipairs({"seal", "koi", "bronto", "elephant"}) do
-        if lowerName:find(petName, 1, true) then
-            return true
-        end
-    end
-
     for _, child in ipairs(instance:GetChildren()) do
         local childName = child.Name:lower()
         if childName:find("pet", 1, true)
@@ -794,6 +788,51 @@ local function isPetInventoryEntry(entry)
         return true
     end
     return isPetItem(instance)
+end
+
+local function petOptionNames()
+    local names = {}
+    local seen = {}
+    for _, entry in ipairs(Inventory.Pets or {}) do
+        if isPetInventoryEntry(entry) then
+            addUnique(names, seen, entry.Name)
+        end
+    end
+    sortOptions(names)
+    return names
+end
+
+local function pruneSelectionToOptions(selection, options)
+    local valid = {}
+    for _, option in ipairs(options or {}) do
+        valid[option] = true
+    end
+    for key in pairs(selection or {}) do
+        if key ~= "__order" and not valid[key] then
+            selection[key] = nil
+        end
+    end
+    if selection and selection.__order then
+        local order = {}
+        for _, name in ipairs(selection.__order) do
+            if valid[name] and selection[name] then
+                order[#order + 1] = name
+            end
+        end
+        selection.__order = order
+    end
+end
+
+local function prunePetSelections()
+    local options = petOptionNames()
+    pruneSelectionToOptions(Config.Hatch.KeepPetNames, options)
+    pruneSelectionToOptions(Config.Hatch.HatchReductionTeam, options)
+    pruneSelectionToOptions(Config.Hatch.SealTeam, options)
+    pruneSelectionToOptions(Config.Hatch.KoiTeam, options)
+    pruneSelectionToOptions(Config.Hatch.BrontoTeam, options)
+    pruneSelectionToOptions(Config.Pets.SelectedPets, options)
+    pruneSelectionToOptions(Config.Pets.LevelTeam, options)
+    pruneSelectionToOptions(Config.Pets.KgBoostTeam, options)
 end
 
 local function petKgFromName(name)
@@ -825,7 +864,7 @@ local function highestPetByName(target)
     local best
     local bestKg = -1
     for _, entry in ipairs(Inventory.Pets or {}) do
-        if petNameMatches(entry, target) then
+        if isPetInventoryEntry(entry) and petNameMatches(entry, target) then
             local kg = petKg(entry)
             if kg > bestKg then
                 best = entry
@@ -949,6 +988,7 @@ local function refreshInventory()
         end
     end
     autoSelectSpecificPetTeams()
+    prunePetSelections()
 
     for key, list in pairs(Options) do
         if type(list) == "table" and key ~= "Shops" then
@@ -3102,7 +3142,7 @@ local function multiselect(parent, text, optionGetter, selected, callback)
     local function textValue()
         local names = selectedNames(selected)
         if #names == 0 then
-            return "All items"
+            return "All"
         end
         if #names > 2 then
             return tostring(#names) .. " selected"
@@ -3116,6 +3156,25 @@ local function multiselect(parent, text, optionGetter, selected, callback)
                 child:Destroy()
             end
         end
+        local options = optionGetter()
+        local valid = {}
+        for _, option in ipairs(options) do
+            valid[option] = true
+        end
+        for key in pairs(selected) do
+            if key ~= "__order" and not valid[key] then
+                selected[key] = nil
+            end
+        end
+        if selected.__order then
+            local order = {}
+            for _, name in ipairs(selected.__order) do
+                if valid[name] and selected[name] then
+                    order[#order + 1] = name
+                end
+            end
+            selected.__order = order
+        end
         open.Text = textValue()
 
         local all = Instance.new("TextButton")
@@ -3123,7 +3182,7 @@ local function multiselect(parent, text, optionGetter, selected, callback)
         all.BackgroundColor3 = Theme.Panel2
         all.BorderSizePixel = 0
         all.Font = Enum.Font.GothamBold
-        all.Text = "Use all items"
+        all.Text = "Use all"
         all.TextColor3 = Theme.Accent
         all.TextSize = 12
         all.TextXAlignment = Enum.TextXAlignment.Left
@@ -3142,7 +3201,7 @@ local function multiselect(parent, text, optionGetter, selected, callback)
             saveConfigSoon()
         end)
 
-        for _, option in ipairs(optionGetter()) do
+        for _, option in ipairs(options) do
             local item = Instance.new("TextButton")
             item.Size = UDim2.new(1, -16, 0, 30)
             item.BackgroundColor3 = selected[option] and Theme.Accent or Theme.Panel2
@@ -3251,7 +3310,7 @@ do
     local keep = section(hatch, "Keep Hatched Pets")
     toggle(keep, "Keep Matching Mutations", Config.Hatch.KeepMutatedPets, function(v) Config.Hatch.KeepMutatedPets = v end)
     multiselect(keep, "Keep Mutations", function() return Options.Mutations end, Config.Hatch.KeepMutations, nil)
-    multiselect(keep, "Keep Pet Names", function() return Options.Pets end, Config.Hatch.KeepPetNames, nil)
+    multiselect(keep, "Keep Pet Names", petOptionNames, Config.Hatch.KeepPetNames, nil)
     input(keep, "Egg Rule Name", Config.Hatch.RuleEggName, function(v)
         Config.Hatch.RuleEggName = canonicalEggName(v)
         setEggPetRule()
@@ -3270,10 +3329,10 @@ do
     toggle(keep, "Only Sell Level 1", Config.Hatch.SellOnlyLevelOne, function(v) Config.Hatch.SellOnlyLevelOne = v end)
 
     local teams = section(hatch, "Hatch Teams")
-    multiselect(teams, "Egg Hatch Reduction Team", function() return Options.Pets end, Config.Hatch.HatchReductionTeam, nil)
-    multiselect(teams, "Seal Team", function() return Options.Pets end, Config.Hatch.SealTeam, nil)
-    multiselect(teams, "Koi Team", function() return Options.Pets end, Config.Hatch.KoiTeam, nil)
-    multiselect(teams, "Bronto Team", function() return Options.Pets end, Config.Hatch.BrontoTeam, nil)
+    multiselect(teams, "Egg Hatch Reduction Team", petOptionNames, Config.Hatch.HatchReductionTeam, nil)
+    multiselect(teams, "Seal Team", petOptionNames, Config.Hatch.SealTeam, nil)
+    multiselect(teams, "Koi Team", petOptionNames, Config.Hatch.KoiTeam, nil)
+    multiselect(teams, "Bronto Team", petOptionNames, Config.Hatch.BrontoTeam, nil)
 end
 
 do
@@ -3290,11 +3349,11 @@ do
     input(timing, "Stop KG Boost At", Config.Pets.KgBoostStopAt, function(v) Config.Pets.KgBoostStopAt = math.max(0.1, tonumber(v) or 5.4) end)
 
     local selected = section(pets, "Pet Selection")
-    multiselect(selected, "Pets To Feed", function() return Options.Pets end, Config.Pets.SelectedPets, nil)
+    multiselect(selected, "Pets To Feed", petOptionNames, Config.Pets.SelectedPets, nil)
 
     local teams = section(pets, "Pet Teams")
-    multiselect(teams, "Leveling Team", function() return Options.Pets end, Config.Pets.LevelTeam, nil)
-    multiselect(teams, "KG Boost Team", function() return Options.Pets end, Config.Pets.KgBoostTeam, nil)
+    multiselect(teams, "Leveling Team", petOptionNames, Config.Pets.LevelTeam, nil)
+    multiselect(teams, "KG Boost Team", petOptionNames, Config.Pets.KgBoostTeam, nil)
 end
 
 do
