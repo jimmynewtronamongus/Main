@@ -736,29 +736,64 @@ local function isPetItem(instance)
         or lowerName:find("sprinkler", 1, true)
         or lowerName:find("trowel", 1, true)
         or lowerName:find("wrench", 1, true)
-        or lowerName:find("tool", 1, true)
         or lowerName:find("fruit", 1, true)
+        or lowerName:find("spray", 1, true)
+        or lowerName:find("shovel", 1, true)
+        or lowerName:find("rod", 1, true)
+        or lowerName:find("gear", 1, true)
     then
         return false
     end
 
     local lower = textOf(instance)
+    if lower:find("itemuuid", 1, true)
+        and not lower:find("petuuid", 1, true)
+        and not lower:find("pettool", 1, true)
+    then
+        return false
+    end
+
     if lower:find("pettool", 1, true)
         or lower:find("petuuid", 1, true)
         or lower:find("age ", 1, true)
         or lower:find("[age", 1, true)
-        or lower:find(" kg", 1, true)
     then
         return true
     end
 
+    for _, petName in ipairs({"seal", "koi", "bronto", "elephant"}) do
+        if lowerName:find(petName, 1, true) then
+            return true
+        end
+    end
+
     for _, child in ipairs(instance:GetChildren()) do
         local childName = child.Name:lower()
-        if childName:find("pet", 1, true) and (child:IsA("LocalScript") or child:IsA("Script") or child:IsA("ModuleScript")) then
+        if childName:find("pet", 1, true)
+            and (
+                child:IsA("LocalScript")
+                or child:IsA("Script")
+                or child:IsA("ModuleScript")
+                or child:IsA("ValueBase")
+                or child:IsA("Folder")
+            )
+        then
             return true
         end
     end
     return false
+end
+
+local function isPetInventoryEntry(entry)
+    local instance = entry and entry.Instance
+    if not instance then
+        return false
+    end
+    local petsPhysical = Workspace:FindFirstChild("PetsPhysical")
+    if petsPhysical and instance:IsDescendantOf(petsPhysical) then
+        return true
+    end
+    return isPetItem(instance)
 end
 
 local function petKgFromName(name)
@@ -957,7 +992,7 @@ local function selectedEntries(bucket, selected)
     local empty = #(selectedNames(selected)) == 0
     for _, entry in ipairs(Inventory[bucket] or {}) do
         local selectedMatch = bucket == "Eggs" and hasEggSelection(selected, entry.Name) or hasSelection(selected, entry.Name)
-        if empty or selectedMatch then
+        if (empty or selectedMatch) and (bucket ~= "Pets" or isPetInventoryEntry(entry)) then
             out[#out + 1] = entry
         end
     end
