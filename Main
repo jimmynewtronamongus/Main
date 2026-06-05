@@ -166,7 +166,6 @@ local Config = {
             Blossoming = true,
             __order = {"Spirit Sparkle", "Peppermint", "Blossoming"},
         },
-        KeepPetNames = {},
         RuleEggName = "",
         RuleKeepPets = "",
         RuleSellPets = "",
@@ -825,7 +824,6 @@ end
 
 local function prunePetSelections()
     local options = petOptionNames()
-    pruneSelectionToOptions(Config.Hatch.KeepPetNames, options)
     pruneSelectionToOptions(Config.Hatch.HatchReductionTeam, options)
     pruneSelectionToOptions(Config.Hatch.SealTeam, options)
     pruneSelectionToOptions(Config.Hatch.KoiTeam, options)
@@ -1151,10 +1149,6 @@ local function petNameMatchesList(entry, names)
     return false
 end
 
-local function petNameSelectedForKeep(entry)
-    return petNameMatchesList(entry, selectedNames(Config.Hatch.KeepPetNames))
-end
-
 local function ensureEggPetRules()
     if type(Config.Hatch.PetRulesByEgg) ~= "table" then
         Config.Hatch.PetRulesByEgg = {}
@@ -1215,12 +1209,9 @@ local function processNewlyHatchedPets(previousKeys, eggName)
             local level = petLevel(entry)
             local ruleKeepName = petNameMatchesList(entry, keepNames)
             local ruleSellName = petNameMatchesList(entry, sellNames)
-            local globalKeepName = petNameSelectedForKeep(entry)
             local keepReason
             if ruleKeepName then
                 keepReason = "egg rule " .. tostring(ruleKeepName)
-            elseif globalKeepName then
-                keepReason = "selected pet " .. tostring(globalKeepName)
             elseif baseKg >= (tonumber(Config.Hatch.AlwaysKeepBaseKg) or 3) then
                 keepReason = ("base %.2fkg"):format(baseKg)
             elseif age <= 1 and baseKg >= (tonumber(Config.Hatch.KeepMinBaseKg) or 3) then
@@ -3310,7 +3301,6 @@ do
     local keep = section(hatch, "Keep Hatched Pets")
     toggle(keep, "Keep Matching Mutations", Config.Hatch.KeepMutatedPets, function(v) Config.Hatch.KeepMutatedPets = v end)
     multiselect(keep, "Keep Mutations", function() return Options.Mutations end, Config.Hatch.KeepMutations, nil)
-    multiselect(keep, "Keep Pet Names", petOptionNames, Config.Hatch.KeepPetNames, nil)
     input(keep, "Egg Rule Name", Config.Hatch.RuleEggName, function(v)
         Config.Hatch.RuleEggName = canonicalEggName(v)
         setEggPetRule()
