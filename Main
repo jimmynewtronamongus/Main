@@ -1763,30 +1763,6 @@ local function eggPredictedPetInfo(egg)
         end
     end
 
-    for _, descendant in ipairs(egg:GetDescendants()) do
-        if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
-            local parent = descendant.Parent
-            local context = normalizedName(
-                tostring(descendant.Name or "") .. " "
-                .. tostring(parent and parent.Name or "") .. " "
-                .. tostring(parent and parent.Parent and parent.Parent.Name or "")
-            )
-            local relevant = context:find("pet", 1, true)
-                or context:find("result", 1, true)
-                or context:find("reward", 1, true)
-                or context:find("weight", 1, true)
-                or context:find("kg", 1, true)
-            if not relevant then
-                continue
-            end
-            local text = tostring(descendant.Text or "")
-            foundKg = foundKg or petKgText(text)
-            for line in text:gmatch("[^\n\r|]+") do
-                foundName = foundName or cleanPredictedPetText(line)
-            end
-            foundName = foundName or cleanPredictedPetText(text)
-        end
-    end
     return foundName, foundKg
 end
 
@@ -2212,6 +2188,13 @@ local function revealFromTextBlock(text)
         or lower:find("shop", 1, true)
         or lower:find("restock", 1, true)
         or lower:find("purchase", 1, true)
+        or lower:find("inventory", 1, true)
+        or lower:find("backpack", 1, true)
+        or lower:find("team", 1, true)
+        or lower:find("feed", 1, true)
+        or lower:find("boost", 1, true)
+        or lower:find("level", 1, true)
+        or lower:find("equip", 1, true)
     then
         return nil, nil
     end
@@ -2324,18 +2307,25 @@ local function scanRevealTextObject(object)
         return
     end
     local relevant = context:find("egg", 1, true)
-        or context:find("pet", 1, true)
         or context:find("hatch", 1, true)
-        or context:find("ready", 1, true)
+        or context:find("hatched", 1, true)
         or context:find("result", 1, true)
         or context:find("reward", 1, true)
-        or context:find("kg", 1, true)
-        or petKgText(text) ~= nil
     if context:find("stock", 1, true)
         or context:find("shop", 1, true)
         or context:find("restock", 1, true)
         or context:find("purchase", 1, true)
         or context:find("price", 1, true)
+        or context:find("inventory", 1, true)
+        or context:find("backpack", 1, true)
+        or context:find("team", 1, true)
+        or context:find("feed", 1, true)
+        or context:find("boost", 1, true)
+        or context:find("level", 1, true)
+        or context:find("equip", 1, true)
+        or context:find("selectedpets", 1, true)
+        or context:find("petselection", 1, true)
+        or context:find("petteams", 1, true)
     then
         relevant = false
     end
@@ -2398,9 +2388,6 @@ local function installEggRevealTextHooks()
     if playerGui and not State.EggRevealTextHooked then
         State.EggRevealTextHooked = true
         State.EggRevealTextConnections[playerGui] = playerGui.DescendantAdded:Connect(hookRevealTextObject)
-        for _, descendant in ipairs(playerGui:GetDescendants()) do
-            hookRevealTextObject(descendant)
-        end
     end
 
     for _, root in ipairs(eggRoots()) do
