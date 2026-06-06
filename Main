@@ -1773,10 +1773,43 @@ local function eggMatchesSelection(egg, selected)
 end
 
 local function readEggField(egg, key)
-    local ok, value = pcall(function()
-        return egg:GetAttribute(key)
-    end)
-    if ok and value ~= nil then
+    local targetKey = normalizedName(key)
+    local function readAttribute(instance, exactOnly)
+        local ok, value = pcall(function()
+            return instance:GetAttribute(key)
+        end)
+        if ok and value ~= nil then
+            return value
+        end
+        if exactOnly then
+            return nil
+        end
+        local attrsOk, attrs = pcall(function()
+            return instance:GetAttributes()
+        end)
+        if attrsOk then
+            for attrKey, attrValue in pairs(attrs) do
+                if normalizedName(attrKey) == targetKey then
+                    return attrValue
+                end
+            end
+        end
+        return nil
+    end
+
+    local function valueBaseValue(instance, exactOnly)
+        if instance:IsA("ValueBase") and (instance.Name == key or (not exactOnly and normalizedName(instance.Name) == targetKey)) then
+            return instance.Value
+        end
+        return nil
+    end
+
+    local value = readAttribute(egg, true)
+    if value ~= nil then
+        return value
+    end
+    value = valueBaseValue(egg, true)
+    if value ~= nil then
         return value
     end
     local child = egg:FindFirstChild(key)
@@ -1787,7 +1820,31 @@ local function readEggField(egg, key)
     if deepChild and deepChild:IsA("ValueBase") then
         return deepChild.Value
     end
+    value = readAttribute(egg, false)
+    if value ~= nil then
+        return value
+    end
+    for _, descendant in ipairs(egg:GetDescendants()) do
+        value = readAttribute(descendant, false)
+        if value ~= nil then
+            return value
+        end
+        value = valueBaseValue(descendant, false)
+        if value ~= nil then
+            return value
+        end
+    end
     return nil
+end
+
+local function readEggFieldAny(egg, keys)
+    for _, key in ipairs(keys) do
+        local value = readEggField(egg, key)
+        if value ~= nil then
+            return value, key
+        end
+    end
+    return nil, nil
 end
 
 local function eggWorldPosition(egg)
@@ -1930,6 +1987,54 @@ local function formatDuration(seconds)
     return tostring(secs) .. "s"
 end
 
+local function eggBooleanValue(value)
+    if type(value) == "boolean" then
+        return value
+    end
+    local lower = tostring(value or ""):lower()
+    local compact = normalizedName(lower)
+    if lower == "true" or lower == "yes" or lower == "ready" or compact == "readytohatch" or compact == "canhatch" or lower == "1" then
+        return true
+    end
+    if lower == "false" or lower == "no" or compact == "notready" or lower == "0" then
+        return false
+    end
+    return nil
+end
+
+local function eggNumericSeconds(value)
+    local numeric = tonumber(value)
+    if numeric then
+        return numeric
+    end
+    return durationTextSeconds(value, true)
+end
+
+local function normalizeEpochSeconds(value)
+    value = tonumber(value)
+    if not value then
+        return nil
+    end
+    if value > 100000000000 then
+        value = value / 1000
+    end
+    if value > 100000 then
+        return value
+    end
+    return nil
+end
+
+local function normalizeEggProgress(value)
+    value = tonumber(value)
+    if not value then
+        return nil
+    end
+    if value > 1 then
+        value = value / 100
+    end
+    return math.clamp(value, 0, 1)
+end
+
 local function progressEta(signal)
     if not signal or not signal.Progress or signal.Progress >= 0.999 then
         return nil
@@ -1988,8 +2093,8 @@ local function eggReadyInfo(egg)
     local signal = State.EggSignals[egg] or State.EggSignalKeys[eggSignalKey(egg)]
     local falseReadyReason
 
-    for _, key in ipairs({"Ready", "CanHatch", "HatchReady", "IsReady"}) do
-        local value = readEggField(egg, key)
+    for _, key in ipairs({"Ready", "CanHatch", "HatchReady", "IsReady", "ReadyToHatch", "CanOpen", "CanClaim", "CanCollect", "Hatchable"}) do
+        local value = eggBooleanValue(readEggField(egg, key))
         if value == true then
             return true, key
         elseif value == false then
@@ -1998,12 +2103,9 @@ local function eggReadyInfo(egg)
     end
 
     local now = os.time()
-    for _, key in ipairs({"HatchAt", "ReadyAt", "HatchReadyAt", "FinishTime", "EndTime"}) do
-        local value = tonumber(readEggField(egg, key))
+    for _, key in ipairs({"HatchAt", "ReadyAt", "HatchReadyAt", "FinishTime", "EndTime", "FinishAt", "EndAt", "ReadyTimestamp", "ReadyUnix", "MatureAt", "GrownAt"}) do
+        local value = normalizeEpochSeconds(readEggField(egg, key))
         if value then
-            if value > 100000000000 then
-                value = value / 1000
-            end
             if value <= now then
                 return true, key
             end
@@ -2011,9 +2113,9 @@ local function eggReadyInfo(egg)
         end
     end
 
-    for _, key in ipairs({"TimeLeft", "TimeRemaining", "HatchTimeLeft", "HatchTimeRemaining", "Remaining", "Cooldown"}) do
+    for _, key in ipairs({"TimeLeft", "TimeRemaining", "HatchTimeLeft", "HatchTimeRemaining", "Remaining", "RemainingTime", "Cooldown", "HatchCooldown", "HatchTimer", "GrowTimeLeft", "GrowthTimeLeft", "SecondsLeft", "SecondsRemaining"}) do
         local raw = readEggField(egg, key)
-        local value = tonumber(raw) or durationTextSeconds(raw, true)
+        local value = eggNumericSeconds(raw)
         if value then
             if value <= 0 then
                 return true, key
@@ -2022,39 +2124,46 @@ local function eggReadyInfo(egg)
         end
     end
 
-    local textReady, textReason, textSeconds = eggTimerTextInfo(egg)
-    if textReady ~= nil then
-        return textReady, textReason, textSeconds
-    end
-
-    local readyTime = tonumber(readEggField(egg, "ReadyTime"))
-    if readyTime then
-        if readyTime > 100000 then
-            if readyTime > 100000000000 then
-                readyTime = readyTime / 1000
-            end
-            if readyTime <= now then
-                return true, "ReadyTime"
-            end
-            return false, formatDuration(readyTime - now), readyTime - now
+    local readyTime = readEggField(egg, "ReadyTime")
+    local readyEpoch = normalizeEpochSeconds(readyTime)
+    if readyEpoch then
+        if readyEpoch <= now then
+            return true, "ReadyTime"
         end
+        return false, formatDuration(readyEpoch - now), readyEpoch - now
+    end
+    readyTime = eggNumericSeconds(readyTime)
+    if readyTime then
         if readyTime <= 0 then
             return true, "ReadyTime"
         end
         return false, formatDuration(readyTime), readyTime
     end
 
+    local startValue = normalizeEpochSeconds(readEggFieldAny(egg, {"StartTime", "StartedAt", "PlacedAt", "CreatedAt", "CreationTime", "BeginTime", "BeginAt", "GrowthStartTime", "HatchStartTime"}))
+    local durationValue, durationKey = readEggFieldAny(egg, {"Duration", "HatchDuration", "GrowTime", "GrowthTime", "IncubationTime", "TimeToHatch", "TotalTime", "TotalDuration", "HatchTimeTotal", "HatchTime"})
+    durationValue = eggNumericSeconds(durationValue)
+    if startValue and durationValue and durationValue > 0 then
+        local remaining = (startValue + durationValue) - now
+        if remaining <= 0 then
+            return true, durationKey or "start+duration"
+        end
+        return false, formatDuration(remaining), remaining
+    end
+
+    local progressValue = normalizeEggProgress(readEggFieldAny(egg, {"Progress", "EggProgress", "HatchProgress", "GrowthProgress", "GrowProgress", "Percent", "PercentComplete", "HatchPercent"}))
+    if progressValue then
+        if progressValue >= 0.999 then
+            return true, "egg progress"
+        end
+        if durationValue and durationValue > 0 then
+            local remaining = durationValue * (1 - progressValue)
+            return false, formatDuration(remaining), remaining
+        end
+    end
+
     if signal and signal.Ready == true then
         return true, signal.Reason or "ready remote"
-    end
-
-    local promptReady, promptReason = eggPromptReadyInfo(egg)
-    if promptReady ~= nil then
-        return promptReady, promptReason
-    end
-
-    if falseReadyReason then
-        return false, falseReadyReason
     end
 
     if signal and signal.Progress then
@@ -2066,6 +2175,20 @@ local function eggReadyInfo(egg)
             return false, formatDuration(eta), eta
         end
         return false, ("estimating time (%d%%)"):format(math.floor(signal.Progress * 100))
+    end
+
+    local promptReady, promptReason = eggPromptReadyInfo(egg)
+    if promptReady ~= nil then
+        return promptReady, promptReason
+    end
+
+    local textReady, textReason, textSeconds = eggTimerTextInfo(egg)
+    if textReady ~= nil then
+        return textReady, textReason, textSeconds
+    end
+
+    if falseReadyReason then
+        return false, falseReadyReason
     end
 
     return false, "no ready signal"
