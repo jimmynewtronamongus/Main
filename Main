@@ -225,6 +225,11 @@ local Config = {
         LevelInterval = 5,
         KgBoostInterval = 5,
         KgBoostStopAt = 5.4,
+        AutoElephantStack = false,
+        ElephantStackInterval = 30,
+        ElephantStackDelay = 1.7,
+        ElephantStackCount = 3,
+        ElephantStackMinTargetLevel = 50,
         FavoriteMode = "Favorite",
         SelectedPets = {},
         LevelTeam = {},
@@ -937,6 +942,23 @@ local function highestPetByName(target)
     return best
 end
 
+local function highestPetsByName(target, limit)
+    local matches = {}
+    for _, entry in ipairs(Inventory.Pets or {}) do
+        if isPetInventoryEntry(entry) and petNameMatches(entry, target) then
+            matches[#matches + 1] = entry
+        end
+    end
+    table.sort(matches, function(a, b)
+        return petKg(a) > petKg(b)
+    end)
+    local out = {}
+    for i = 1, math.min(#matches, math.max(1, tonumber(limit) or #matches)) do
+        out[#out + 1] = matches[i]
+    end
+    return out
+end
+
 local function setSinglePetSelection(selection, entry)
     if entry then
         setSelectionFromList(selection, {entry.Name})
@@ -1174,22 +1196,33 @@ end
 
 local function petLevel(entry)
     local instance = entry and entry.Instance
+    local best = 0
+    local function add(value)
+        value = tonumber(value)
+        if value and value > best then
+            best = value
+        end
+    end
     if instance then
-        for _, key in ipairs({"Level", "Lvl", "PetLevel"}) do
+        for _, key in ipairs({"Level", "Lvl", "Age", "PetLevel", "PetLvl"}) do
             local ok, value = pcall(function()
                 return instance:GetAttribute(key)
             end)
-            if ok and tonumber(value) then
-                return tonumber(value)
+            if ok then
+                add(value)
             end
-            local child = instance:FindFirstChild(key)
-            if child and child:IsA("ValueBase") and tonumber(child.Value) then
-                return tonumber(child.Value)
+            local child = instance:FindFirstChild(key, true)
+            if child and child:IsA("ValueBase") then
+                add(child.Value)
             end
         end
     end
     local text = tostring(entry and entry.Name or "") .. " " .. tostring(instance and textOf(instance) or "")
-    return tonumber(text:match("[Ll]evel%s*(%d+)")) or tonumber(text:match("[Ll]vl%s*(%d+)")) or petAge(entry)
+    add(text:match("[Ll]evel%s*:?%s*(%d+)"))
+    add(text:match("[Ll]vl%s*:?%s*(%d+)"))
+    add(text:match("[Aa]ge%s*:?%s*(%d+)"))
+    add(text:match("%[Age%s*(%d+)%]"))
+    return best > 0 and best or petAge(entry)
 end
 
 local function petBaseKg(entry)
@@ -1209,6 +1242,21 @@ local function petBaseKg(entry)
         end
     end
     return petKg(entry)
+end
+
+local function highestLevelPet(minLevel, excludeName)
+    local best
+    local bestLevel = -1
+    for _, entry in ipairs(Inventory.Pets or {}) do
+        if isPetInventoryEntry(entry) and not (excludeName and petNameMatches(entry, excludeName)) then
+            local level = petLevel(entry)
+            if level >= minLevel and level > bestLevel then
+                best = entry
+                bestLevel = level
+            end
+        end
+    end
+    return best, bestLevel
 end
 
 local function petNameMatchesList(entry, names)
@@ -3026,6 +3074,82 @@ function Actions.KgBoostPetsOnce()
     log(("KG boost pets sent %d request(s)."):format(fired))
 end
 
+local function callPetPlacement(entry)
+    if not entry then
+        return 0
+    end
+    local uuid = entry.Uuid
+    local instance = entry.Instance
+    if uuid then
+        for _, action in ipairs({"EquipPet", "PlacePet", "SpawnPet", "SetActivePet", "Equip", "Place", "Spawn", "AddPet"}) do
+            local ok = callRemote("ActivePetService", action, uuid)
+                or callRemote("PetsService", action, uuid)
+            if ok then
+                return 1
+            end
+        end
+        local ok = callRemote("ActivePetService", uuid) or callRemote("PetsService", uuid)
+        if ok then
+            return 1
+        end
+    end
+    if instance then
+        for _, action in ipairs({"EquipPet", "PlacePet", "SpawnPet", "SetActivePet", "Equip", "Place", "Spawn", "AddPet"}) do
+            local ok = callRemote("ActivePetService", action, instance)
+                or callRemote("PetsService", action, instance)
+            if ok then
+                return 1
+            end
+        end
+        local ok = callRemote("ActivePetService", instance) or callRemote("PetsService", instance)
+        if ok then
+            return 1
+        end
+    end
+    return 0
+end
+
+function Actions.ElephantStackOnce()
+    refreshInventory()
+
+    local minLevel = math.max(1, tonumber(Config.Pets.ElephantStackMinTargetLevel) or 50)
+    local targetPet, targetLevel = highestLevelPet(minLevel, "Elephant")
+    if not targetPet then
+        log(("Elephant stack skipped: need at least one level %d+ non-Elephant pet."):format(minLevel))
+        return 0
+    end
+
+    local count = math.max(1, math.floor(tonumber(Config.Pets.ElephantStackCount) or 3))
+    local delaySeconds = math.max(0.1, tonumber(Config.Pets.ElephantStackDelay) or 1.7)
+    local elephants = highestPetsByName("Elephant", count)
+    if #elephants == 0 then
+        log("Elephant stack skipped: no Elephant pets found.")
+        return 0
+    end
+
+    local fired = 0
+    for index, elephant in ipairs(elephants) do
+        equip(elephant.Instance)
+        local sent = callPetPlacement(elephant)
+        if sent > 0 then
+            fired += 1
+            log(("Elephant stack %d/%d sent for %s."):format(index, #elephants, elephant.Name))
+        end
+        if index < #elephants then
+            task.wait(delaySeconds)
+        end
+    end
+
+    task.delay(1, refreshInventory)
+    log(("Elephant stack finished: %d elephant(s), %.2fs spacing, target %s level %d."):format(
+        fired,
+        delaySeconds,
+        targetPet.Name,
+        targetLevel or minLevel
+    ))
+    return fired
+end
+
 function Actions.FavoritePetsOnce()
     local desired = Config.Pets.FavoriteMode ~= "Unfavorite"
     local fired = 0
@@ -3878,6 +4002,7 @@ do
     toggle(auto, "Auto Feed", Config.Pets.AutoFeed, function(v) Config.Pets.AutoFeed = v end)
     toggle(auto, "Auto Level", Config.Pets.AutoLevel, function(v) Config.Pets.AutoLevel = v end)
     toggle(auto, "Auto KG Boost", Config.Pets.AutoKgBoost, function(v) Config.Pets.AutoKgBoost = v end)
+    toggle(auto, "Auto Elephant Stack", Config.Pets.AutoElephantStack, function(v) Config.Pets.AutoElephantStack = v end)
     toggle(auto, "Auto Favorite", Config.Pets.AutoFavorite, function(v) Config.Pets.AutoFavorite = v end)
 
     local timing = section(pets, "Pet Timing")
@@ -3885,6 +4010,13 @@ do
     input(timing, "Level Interval", Config.Pets.LevelInterval, function(v) Config.Pets.LevelInterval = math.max(1, tonumber(v) or 5) end)
     input(timing, "KG Boost Interval", Config.Pets.KgBoostInterval, function(v) Config.Pets.KgBoostInterval = math.max(1, tonumber(v) or 5) end)
     input(timing, "Stop KG Boost At", Config.Pets.KgBoostStopAt, function(v) Config.Pets.KgBoostStopAt = math.max(0.1, tonumber(v) or 5.4) end)
+    input(timing, "Elephant Stack Interval", Config.Pets.ElephantStackInterval, function(v) Config.Pets.ElephantStackInterval = math.max(5, tonumber(v) or 30) end)
+    input(timing, "Elephant Stack Delay", Config.Pets.ElephantStackDelay, function(v) Config.Pets.ElephantStackDelay = math.max(0.1, tonumber(v) or 1.7) end)
+    input(timing, "Elephant Stack Count", Config.Pets.ElephantStackCount, function(v) Config.Pets.ElephantStackCount = math.max(1, math.floor(tonumber(v) or 3)) end)
+    input(timing, "Elephant Target Min Level", Config.Pets.ElephantStackMinTargetLevel, function(v) Config.Pets.ElephantStackMinTargetLevel = math.max(1, math.floor(tonumber(v) or 50)) end)
+
+    local stack = section(pets, "Elephant Stack")
+    button(stack, "Run Elephant Stack", Actions.ElephantStackOnce)
 
     local selected = section(pets, "Pet Selection")
     multiselect(selected, "Pets To Feed", petOptionNames, Config.Pets.SelectedPets, nil)
@@ -4050,6 +4182,9 @@ task.spawn(function()
         if Config.Pets.AutoKgBoost then
             tickAction("KgBoost", tonumber(Config.Pets.KgBoostInterval) or 5, "KgBoost", Actions.KgBoostPetsOnce)
         end
+        if Config.Pets.AutoElephantStack then
+            tickAction("ElephantStack", tonumber(Config.Pets.ElephantStackInterval) or 30, "ElephantStack", Actions.ElephantStackOnce)
+        end
         if Config.Pets.AutoFavorite then
             tickAction("Favorite", 6, "Favorite", Actions.FavoritePetsOnce)
         end
@@ -4087,6 +4222,7 @@ task.spawn(function()
         if Config.Pets.AutoFeed then active += 1 end
         if Config.Pets.AutoLevel then active += 1 end
         if Config.Pets.AutoKgBoost then active += 1 end
+        if Config.Pets.AutoElephantStack then active += 1 end
         if Config.Pets.AutoFavorite then active += 1 end
         if Config.Shops.AutoBuy then active += 1 end
         if Config.Utility.AutoOpenPacks then active += 1 end
