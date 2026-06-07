@@ -16,6 +16,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
+local MarketplaceService = game:GetService("MarketplaceService")
 local unpackArgs = table.unpack or unpack
 
 local player = Players.LocalPlayer
@@ -94,6 +95,16 @@ local Remotes = {
     SpinnerGame = {"SpinnerGame"},
     SeedPackOpen = {"SeedPack", "Open"},
     WateringCanClaim = {"AdRewardsWateringCan", "WateringCanClaim"},
+    RainbowBeam = {"RainbowBeam"},
+    LeprechaunForceEvent = {"LeprechaunEvent", "ForceEvent"},
+    CookingPotService = {"CookingPotService_RE"},
+    DeveloperPurchase = {"DeveloperPurchase"},
+}
+
+local DevProducts = {
+    SaintPatricksBundle = 3555829934,
+    ForceStartRainbowEvent = 3555612448,
+    RainbowShovelPack = 3560653460,
 }
 
 local DefaultSeeds = {
@@ -1613,6 +1624,132 @@ function Actions.OpenSeedPacksOnce()
         end
     end
     log(("Seed pack opener sent %d request(s)."):format(fired))
+end
+
+local function playerGui()
+    return player:FindFirstChild("PlayerGui")
+end
+
+local function findDescendantByName(root, name)
+    if not root then
+        return nil
+    end
+    if root.Name == name then
+        return root
+    end
+    for _, descendant in ipairs(root:GetDescendants()) do
+        if descendant.Name == name then
+            return descendant
+        end
+    end
+    return nil
+end
+
+local function readProductId(instance)
+    if not instance then
+        return nil
+    end
+    local ok, value = pcall(function()
+        return instance:GetAttribute("ProductId")
+    end)
+    value = ok and tonumber(value) or nil
+    if value then
+        return value
+    end
+    for _, descendant in ipairs(instance:GetDescendants()) do
+        ok, value = pcall(function()
+            return descendant:GetAttribute("ProductId")
+        end)
+        value = ok and tonumber(value) or nil
+        if value then
+            return value
+        end
+    end
+    return nil
+end
+
+local function saintPatricksPackInfo()
+    local gui = playerGui()
+    local shop = gui and gui:FindFirstChild("Shop_UI")
+    local pack = shop and findDescendantByName(shop, "SaintPatricksPack")
+    local info = {
+        Exists = pack ~= nil,
+        ProductId = DevProducts.SaintPatricksBundle,
+        Title = "SAINT PATRICKS BUNDLE",
+        Timer = nil,
+        Items = {},
+    }
+
+    if pack then
+        info.ProductId = readProductId(pack) or info.ProductId
+        local title = pack:FindFirstChild("Title", true)
+        if title and title:IsA("TextLabel") and tostring(title.Text or "") ~= "" then
+            info.Title = title.Text:gsub("[\240-\244][\128-\191][\128-\191][\128-\191]", ""):gsub("^%s+", ""):gsub("%s+$", "")
+        end
+        local timer = pack:FindFirstChild("Timer", true)
+        if timer and timer:IsA("TextLabel") then
+            info.Timer = tostring(timer.Text or "")
+        end
+
+        local seen = {}
+        local items = pack:FindFirstChild("Items", true)
+        if items then
+            for _, descendant in ipairs(items:GetDescendants()) do
+                if descendant:IsA("TextLabel") then
+                    local text = tostring(descendant.Text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+                    local key = normalizedName(text)
+                    if key ~= "" and key ~= "x1" and key ~= "x3" and key ~= "+" and not seen[key] then
+                        seen[key] = true
+                        info.Items[#info.Items + 1] = text
+                    end
+                end
+            end
+        end
+    end
+
+    return info
+end
+
+function Actions.ScanSaintPatricksBundle()
+    local info = saintPatricksPackInfo()
+    local function status(name)
+        local r = remote(name)
+        return ("%s: %s"):format(name, r and (r.ClassName .. " found") or "missing")
+    end
+    log(("Saint Patrick bundle UI: %s | ProductId: %s"):format(info.Exists and "found" or "not visible", tostring(info.ProductId)))
+    if info.Timer and info.Timer ~= "" then
+        log("Saint Patrick timer: " .. info.Timer)
+    end
+    if #info.Items > 0 then
+        log("Saint Patrick items: " .. table.concat(info.Items, ", "))
+    else
+        log("Saint Patrick items from dump: EGG LUCK ABILITY, Four Leaf Clover bundle rewards.")
+    end
+    log(status("LeprechaunForceEvent"))
+    log(status("RainbowBeam"))
+    log(status("CookingPotService"))
+end
+
+function Actions.PromptSaintPatricksBundle()
+    local productId = saintPatricksPackInfo().ProductId or DevProducts.SaintPatricksBundle
+    local ok = pcall(function()
+        MarketplaceService:PromptProductPurchase(player, productId)
+    end)
+    log(ok and ("Prompted Saint Patrick bundle product %d."):format(productId) or "Saint Patrick bundle prompt failed.")
+end
+
+function Actions.PromptRainbowEventProduct()
+    local ok = pcall(function()
+        MarketplaceService:PromptProductPurchase(player, DevProducts.ForceStartRainbowEvent)
+    end)
+    log(ok and ("Prompted ForceStartRainbowEvent product %d."):format(DevProducts.ForceStartRainbowEvent) or "Rainbow event prompt failed.")
+end
+
+function Actions.PromptRainbowShovelPack()
+    local ok = pcall(function()
+        MarketplaceService:PromptProductPurchase(player, DevProducts.RainbowShovelPack)
+    end)
+    log(ok and ("Prompted RainbowShovelPack product %d."):format(DevProducts.RainbowShovelPack) or "Rainbow shovel pack prompt failed.")
 end
 
 local function normalizedEggText(value)
@@ -3824,6 +3961,12 @@ do
     toggle(farm, "Auto Sell Fruit", Config.Utility.AutoSellFruit, function(v) Config.Utility.AutoSellFruit = v end)
     toggle(farm, "Auto Plant Seeds", Config.Utility.AutoPlantSeeds, function(v) Config.Utility.AutoPlantSeeds = v end)
     toggle(farm, "Auto Rebirth", Config.Utility.AutoRebirth, function(v) Config.Utility.AutoRebirth = v end)
+
+    local saintPatrick = section(utility, "Saint Patrick")
+    button(saintPatrick, "Scan Saint Patrick Bundle", Actions.ScanSaintPatricksBundle)
+    button(saintPatrick, "Prompt Saint Patrick Bundle", Actions.PromptSaintPatricksBundle)
+    button(saintPatrick, "Prompt Rainbow Event", Actions.PromptRainbowEventProduct)
+    button(saintPatrick, "Prompt Rainbow Shovel Pack", Actions.PromptRainbowShovelPack)
 
     local timing = section(utility, "Utility Timing")
     input(timing, "Fruit Interval", Config.Utility.FruitInterval, function(v) Config.Utility.FruitInterval = math.max(1, tonumber(v) or 2) end)
