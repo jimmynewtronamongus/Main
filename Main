@@ -74,7 +74,11 @@ local Remotes = {
     Plant = {"Plant_RE"},
     HarvestRemote = {"HarvestRemote"},
     CollectFruit = {"Crops", "Collect"},
+    SellInventory = {"Sell_Inventory"},
     SellItem = {"Sell_Item"},
+    SortBackpack = {"SortBackpackEvent"},
+    CloseFrames = {"Close_Frames"},
+    RefreshActivePetsUI = {"RefreshActivePetsUI"},
     SellPet = {"SellPet_RE"},
     FavoriteItem = {"Favorite_Item"},
     RemoveItem = {"Remove_Item"},
@@ -101,10 +105,6 @@ local DevProducts = {
     Bundles = {
         {"Saint Patrick Bundle", 3555829934},
         {"Rainbow Shovel Pack", 3560653460},
-        {"Easter Exotic Pack x1", 3563673213},
-        {"Easter Exotic Pack x3", 3563673776},
-        {"Easter Exotic Pack x10", 3563674024},
-        {"Easter Exotic Pack x50", 3570335691},
         {"Farmers Market Pack", 3467173511},
         {"Twilight Pack", 3432380384},
     },
@@ -242,6 +242,8 @@ local Config = {
         AutoCollectFruit = false,
         FruitInterval = 2,
         AutoSellFruit = false,
+        AutoSortBackpack = false,
+        SortInterval = 30,
         AutoPlantSeeds = false,
         PlantInterval = 0.6,
         SelectedSeeds = {},
@@ -3076,8 +3078,34 @@ function Actions.CollectFruitOnce()
 end
 
 function Actions.SellFruitOnce()
-    local ok = callRemote("SellItem")
-    log(ok and "Sell_Item sent." or "Sell skipped: Sell_Item missing.")
+    local ok = callRemote("SellInventory")
+    if ok then
+        log("Sell_Inventory sent.")
+        return
+    end
+    ok = callRemote("SellItem")
+    log(ok and "Sell_Item sent." or "Sell skipped: Sell_Inventory/Sell_Item missing.")
+end
+
+function Actions.SortBackpackOnce()
+    local ok = callRemote("SortBackpack")
+    if ok then
+        refreshInventory()
+    end
+    log(ok and "Backpack sort sent." or "Backpack sort skipped: SortBackpackEvent missing.")
+end
+
+function Actions.CloseFramesOnce()
+    local ok = callRemote("CloseFrames")
+    log(ok and "Close frames sent." or "Close frames skipped: Close_Frames missing.")
+end
+
+function Actions.RefreshActivePetsUiOnce()
+    local ok = callRemote("RefreshActivePetsUI")
+    if ok then
+        refreshInventory()
+    end
+    log(ok and "Active pets UI refresh sent." or "Active pets refresh skipped: RefreshActivePetsUI missing.")
 end
 
 function Actions.PlantSeedsOnce()
@@ -3908,8 +3936,15 @@ do
     local farm = section(utility, "Utility")
     toggle(farm, "Auto Collect Fruit", Config.Utility.AutoCollectFruit, function(v) Config.Utility.AutoCollectFruit = v end)
     toggle(farm, "Auto Sell Fruit", Config.Utility.AutoSellFruit, function(v) Config.Utility.AutoSellFruit = v end)
+    toggle(farm, "Auto Sort Backpack", Config.Utility.AutoSortBackpack, function(v) Config.Utility.AutoSortBackpack = v end)
     toggle(farm, "Auto Plant Seeds", Config.Utility.AutoPlantSeeds, function(v) Config.Utility.AutoPlantSeeds = v end)
     toggle(farm, "Auto Rebirth", Config.Utility.AutoRebirth, function(v) Config.Utility.AutoRebirth = v end)
+
+    local inventoryTools = section(utility, "Inventory Tools")
+    button(inventoryTools, "Sell Inventory", Actions.SellFruitOnce)
+    button(inventoryTools, "Sort Backpack", Actions.SortBackpackOnce)
+    button(inventoryTools, "Refresh Active Pets UI", Actions.RefreshActivePetsUiOnce)
+    button(inventoryTools, "Close Game Frames", Actions.CloseFramesOnce)
 
     local bundles = section(utility, "Bundles")
     for _, product in ipairs(DevProducts.Bundles) do
@@ -3925,6 +3960,7 @@ do
 
     local timing = section(utility, "Utility Timing")
     input(timing, "Fruit Interval", Config.Utility.FruitInterval, function(v) Config.Utility.FruitInterval = math.max(1, tonumber(v) or 2) end)
+    input(timing, "Sort Interval", Config.Utility.SortInterval, function(v) Config.Utility.SortInterval = math.max(5, tonumber(v) or 30) end)
     input(timing, "Plant Interval", Config.Utility.PlantInterval, function(v) Config.Utility.PlantInterval = math.max(0.2, tonumber(v) or 0.6) end)
     input(timing, "Rebirth Interval", Config.Utility.RebirthInterval, function(v) Config.Utility.RebirthInterval = math.max(1, tonumber(v) or 10) end)
     input(timing, "Rebirth Cooldown", Config.Utility.RebirthCooldown, function(v) Config.Utility.RebirthCooldown = math.max(60, tonumber(v) or 14400) end)
@@ -4052,6 +4088,9 @@ task.spawn(function()
         if Config.Utility.AutoSellFruit then
             tickAction("SellFruit", 10, "SellFruit", Actions.SellFruitOnce)
         end
+        if Config.Utility.AutoSortBackpack then
+            tickAction("SortBackpack", tonumber(Config.Utility.SortInterval) or 30, "SortBackpack", Actions.SortBackpackOnce)
+        end
         if Config.Utility.AutoPlantSeeds then
             tickAction("Plant", tonumber(Config.Utility.PlantInterval) or 0.6, "Plant", Actions.PlantSeedsOnce)
         end
@@ -4076,6 +4115,7 @@ task.spawn(function()
         if Config.Utility.AutoOpenPacks then active += 1 end
         if Config.Utility.AutoCollectFruit then active += 1 end
         if Config.Utility.AutoSellFruit then active += 1 end
+        if Config.Utility.AutoSortBackpack then active += 1 end
         if Config.Utility.AutoPlantSeeds then active += 1 end
         if Config.Utility.AutoRebirth then active += 1 end
         setStatus(active > 0 and (tostring(active) .. " active") or "Idle")
