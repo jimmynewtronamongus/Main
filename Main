@@ -95,16 +95,19 @@ local Remotes = {
     SpinnerGame = {"SpinnerGame"},
     SeedPackOpen = {"SeedPack", "Open"},
     WateringCanClaim = {"AdRewardsWateringCan", "WateringCanClaim"},
-    RainbowBeam = {"RainbowBeam"},
-    LeprechaunForceEvent = {"LeprechaunEvent", "ForceEvent"},
-    CookingPotService = {"CookingPotService_RE"},
-    DeveloperPurchase = {"DeveloperPurchase"},
 }
 
 local DevProducts = {
-    SaintPatricksBundle = 3555829934,
-    ForceStartRainbowEvent = 3555612448,
-    RainbowShovelPack = 3560653460,
+    Bundles = {
+        {"Saint Patrick Bundle", 3555829934},
+        {"Rainbow Shovel Pack", 3560653460},
+        {"Easter Exotic Pack x1", 3563673213},
+        {"Easter Exotic Pack x3", 3563673776},
+        {"Easter Exotic Pack x10", 3563674024},
+        {"Easter Exotic Pack x50", 3570335691},
+        {"Farmers Market Pack", 3467173511},
+        {"Twilight Pack", 3432380384},
+    },
 }
 
 local DefaultSeeds = {
@@ -1668,88 +1671,34 @@ local function readProductId(instance)
     return nil
 end
 
-local function saintPatricksPackInfo()
+local function saintPatricksPackProductId()
     local gui = playerGui()
     local shop = gui and gui:FindFirstChild("Shop_UI")
     local pack = shop and findDescendantByName(shop, "SaintPatricksPack")
-    local info = {
-        Exists = pack ~= nil,
-        ProductId = DevProducts.SaintPatricksBundle,
-        Title = "SAINT PATRICKS BUNDLE",
-        Timer = nil,
-        Items = {},
-    }
-
-    if pack then
-        info.ProductId = readProductId(pack) or info.ProductId
-        local title = pack:FindFirstChild("Title", true)
-        if title and title:IsA("TextLabel") and tostring(title.Text or "") ~= "" then
-            info.Title = title.Text:gsub("[\240-\244][\128-\191][\128-\191][\128-\191]", ""):gsub("^%s+", ""):gsub("%s+$", "")
-        end
-        local timer = pack:FindFirstChild("Timer", true)
-        if timer and timer:IsA("TextLabel") then
-            info.Timer = tostring(timer.Text or "")
-        end
-
-        local seen = {}
-        local items = pack:FindFirstChild("Items", true)
-        if items then
-            for _, descendant in ipairs(items:GetDescendants()) do
-                if descendant:IsA("TextLabel") then
-                    local text = tostring(descendant.Text or ""):gsub("^%s+", ""):gsub("%s+$", "")
-                    local key = normalizedName(text)
-                    if key ~= "" and key ~= "x1" and key ~= "x3" and key ~= "+" and not seen[key] then
-                        seen[key] = true
-                        info.Items[#info.Items + 1] = text
-                    end
-                end
-            end
-        end
-    end
-
-    return info
+    return readProductId(pack)
 end
 
-function Actions.ScanSaintPatricksBundle()
-    local info = saintPatricksPackInfo()
-    local function status(name)
-        local r = remote(name)
-        return ("%s: %s"):format(name, r and (r.ClassName .. " found") or "missing")
+function Actions.PromptProduct(label, productId)
+    productId = tonumber(productId)
+    if not productId or productId <= 0 then
+        log(("Bundle prompt skipped: invalid product for %s."):format(tostring(label or "product")))
+        return
     end
-    log(("Saint Patrick bundle UI: %s | ProductId: %s"):format(info.Exists and "found" or "not visible", tostring(info.ProductId)))
-    if info.Timer and info.Timer ~= "" then
-        log("Saint Patrick timer: " .. info.Timer)
-    end
-    if #info.Items > 0 then
-        log("Saint Patrick items: " .. table.concat(info.Items, ", "))
-    else
-        log("Saint Patrick items from dump: EGG LUCK ABILITY, Four Leaf Clover bundle rewards.")
-    end
-    log(status("LeprechaunForceEvent"))
-    log(status("RainbowBeam"))
-    log(status("CookingPotService"))
-end
-
-function Actions.PromptSaintPatricksBundle()
-    local productId = saintPatricksPackInfo().ProductId or DevProducts.SaintPatricksBundle
     local ok = pcall(function()
         MarketplaceService:PromptProductPurchase(player, productId)
     end)
-    log(ok and ("Prompted Saint Patrick bundle product %d."):format(productId) or "Saint Patrick bundle prompt failed.")
+    log(ok and ("Prompted %s product %d."):format(tostring(label or "bundle"), productId) or ("Bundle prompt failed: " .. tostring(label or productId)))
 end
 
-function Actions.PromptRainbowEventProduct()
-    local ok = pcall(function()
-        MarketplaceService:PromptProductPurchase(player, DevProducts.ForceStartRainbowEvent)
-    end)
-    log(ok and ("Prompted ForceStartRainbowEvent product %d."):format(DevProducts.ForceStartRainbowEvent) or "Rainbow event prompt failed.")
-end
-
-function Actions.PromptRainbowShovelPack()
-    local ok = pcall(function()
-        MarketplaceService:PromptProductPurchase(player, DevProducts.RainbowShovelPack)
-    end)
-    log(ok and ("Prompted RainbowShovelPack product %d."):format(DevProducts.RainbowShovelPack) or "Rainbow shovel pack prompt failed.")
+function Actions.PromptSaintPatricksBundle()
+    local productId = saintPatricksPackProductId()
+    for _, product in ipairs(DevProducts.Bundles) do
+        if product[1] == "Saint Patrick Bundle" then
+            productId = productId or product[2]
+            break
+        end
+    end
+    Actions.PromptProduct("Saint Patrick Bundle", productId)
 end
 
 local function normalizedEggText(value)
@@ -3962,11 +3911,17 @@ do
     toggle(farm, "Auto Plant Seeds", Config.Utility.AutoPlantSeeds, function(v) Config.Utility.AutoPlantSeeds = v end)
     toggle(farm, "Auto Rebirth", Config.Utility.AutoRebirth, function(v) Config.Utility.AutoRebirth = v end)
 
-    local saintPatrick = section(utility, "Saint Patrick")
-    button(saintPatrick, "Scan Saint Patrick Bundle", Actions.ScanSaintPatricksBundle)
-    button(saintPatrick, "Prompt Saint Patrick Bundle", Actions.PromptSaintPatricksBundle)
-    button(saintPatrick, "Prompt Rainbow Event", Actions.PromptRainbowEventProduct)
-    button(saintPatrick, "Prompt Rainbow Shovel Pack", Actions.PromptRainbowShovelPack)
+    local bundles = section(utility, "Bundles")
+    for _, product in ipairs(DevProducts.Bundles) do
+        local label, productId = product[1], product[2]
+        button(bundles, "Buy " .. label, function()
+            if label == "Saint Patrick Bundle" then
+                Actions.PromptSaintPatricksBundle()
+            else
+                Actions.PromptProduct(label, productId)
+            end
+        end)
+    end
 
     local timing = section(utility, "Utility Timing")
     input(timing, "Fruit Interval", Config.Utility.FruitInterval, function(v) Config.Utility.FruitInterval = math.max(1, tonumber(v) or 2) end)
