@@ -1763,8 +1763,28 @@ local function cleanPredictedPetText(value)
         :gsub("^%s+", "")
         :gsub("%s+$", "")
     local lower = text:lower()
+    local normalized = normalizedEggText(text)
+    for _, list in ipairs({DefaultSeeds, DefaultGear, DefaultEventItems, DefaultSeedPacks, DefaultEggs}) do
+        for _, itemName in ipairs(list) do
+            local itemText = normalizedEggText(itemName)
+            if normalized == itemText or normalized:find(itemText, 1, true) then
+                return nil
+            end
+        end
+    end
     if text == ""
         or isLikelyEggName(text)
+        or lower:find("seed", 1, true)
+        or lower:find("fruit", 1, true)
+        or lower:find("plant", 1, true)
+        or lower:find("crop", 1, true)
+        or lower:find("pack", 1, true)
+        or lower:find("crate", 1, true)
+        or lower:find("sprinkler", 1, true)
+        or lower:find("shovel", 1, true)
+        or lower:find("trowel", 1, true)
+        or lower:find("wrench", 1, true)
+        or lower:find("watering", 1, true)
         or lower:find("stock", 1, true)
         or lower:find("shop", 1, true)
         or lower:find("price", 1, true)
@@ -2450,14 +2470,6 @@ local function contextBlocksEggReveal(context)
         or context:find("petinventory", 1, true)
 end
 
-local function contextLooksLikeEggReveal(context)
-    return context:find("egg", 1, true)
-        or context:find("hatch", 1, true)
-        or context:find("hatched", 1, true)
-        or context:find("result", 1, true)
-        or context:find("reward", 1, true)
-end
-
 local function nearestEggFromInstance(instance)
     if typeof(instance) ~= "Instance" then
         return nil
@@ -2508,26 +2520,6 @@ end
 
 local eggEspTargets
 
-local function revealTargetEggFromGui()
-    local best
-    local bestDistance = math.huge
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    local rootPos = root and root.Position
-    for _, egg in ipairs(eggEspTargets()) do
-        local ready = eggReady(egg)
-        local cachedName, cachedKg = cachedEggReveal(egg)
-        if ready and (not cachedName or not cachedKg) then
-            local pos = eggWorldPosition(egg)
-            local distance = (rootPos and pos) and (pos - rootPos).Magnitude or 0
-            if distance < bestDistance then
-                best = egg
-                bestDistance = distance
-            end
-        end
-    end
-    return best
-end
-
 local function scanRevealTextObject(object)
     if not object or (
         not object:IsA("TextLabel")
@@ -2577,14 +2569,8 @@ local function scanRevealTextObject(object)
     local petName, petKgLabel = revealFromTextBlock(block)
     if petName or petKgLabel then
         local targetEgg = nearestEggFromInstance(object)
-        local explicitReveal = contextLooksLikeEggReveal(context)
-        if not targetEgg and petName and petKgLabel and explicitReveal then
-            targetEgg = revealTargetEggFromGui()
-        elseif not targetEgg and petName and petKgLabel and not explicitReveal then
-            targetEgg = revealTargetEggFromGui()
-            if not targetEgg then
-                return
-            end
+        if not targetEgg then
+            return
         end
         noteEggReveal(targetEgg, petName, petKgLabel, "text hook")
     end
@@ -2612,15 +2598,6 @@ local function hookRevealTextObject(object)
 end
 
 local function installEggRevealTextHooks()
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if playerGui and not State.EggRevealTextHooked then
-        State.EggRevealTextHooked = true
-        State.EggRevealTextConnections[playerGui] = playerGui.DescendantAdded:Connect(hookRevealTextObject)
-        for _, descendant in ipairs(playerGui:GetDescendants()) do
-            hookRevealTextObject(descendant)
-        end
-    end
-
     for _, root in ipairs(eggRoots()) do
         if not State.EggRevealTextConnections[root] then
             State.EggRevealTextConnections[root] = root.DescendantAdded:Connect(hookRevealTextObject)
