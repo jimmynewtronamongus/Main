@@ -603,7 +603,7 @@ local function callVariants(name, variants, delaySeconds)
     for _, args in ipairs(variants or {{}}) do
         local ok = callRemote(name, unpackArgs(args))
         if ok then
-            count += 1
+            count = count + 1
             if delaySeconds and delaySeconds > 0 then
                 task.wait(delaySeconds)
             end
@@ -1452,13 +1452,13 @@ local function processNewlyHatchedPets(previousKeys, eggName)
 
             if keepReason then
                 favoritePetEntry(entry)
-                kept += 1
+                kept = kept + 1
                 log(("Kept hatched pet %s from %s (%s)."):format(entry.Name, tostring(eggName or "egg"), keepReason))
             elseif canSellNewHatches and (petRuleSell or (not hasSellRules) or ruleSellName) then
                 if (not Config.Hatch.SellOnlyLevelOne) or level <= 1 then
                     local fired = sellPetEntry(entry)
                     if fired > 0 then
-                        sold += 1
+                        sold = sold + 1
                         local reason = petRuleSell and ("pet rule " .. tostring(petRuleName or entry.Name))
                             or (ruleSellName and ("sell rule " .. tostring(ruleSellName)))
                             or "unkept hatch"
@@ -1592,42 +1592,42 @@ function Actions.AutoBuyOnce()
     for _, shop in ipairs(shops) do
         if shop == "Seed Shop" then
             for index, name in ipairs(DefaultSeeds) do
-                fired += buyVariants("BuySeedStock", name, index)
-                fired += buyVariants("BuyDailySeedShopStock", name, index)
+                fired = fired + buyVariants("BuySeedStock", name, index)
+                fired = fired + buyVariants("BuyDailySeedShopStock", name, index)
             end
         elseif shop == "Gear Shop" then
             for index, name in ipairs(DefaultGear) do
-                fired += buyVariants("BuyGearStock", name, index)
+                fired = fired + buyVariants("BuyGearStock", name, index)
             end
         elseif shop == "Egg Shop" then
             for index, name in ipairs(eggs) do
-                fired += buyVariants("BuyPetEgg", name, index)
+                fired = fired + buyVariants("BuyPetEgg", name, index)
             end
         elseif shop == "Cosmetic Shop" then
-            fired += buyVariants("BuyCosmeticItem")
-            fired += buyVariants("BuyCosmeticCrate")
-            fired += buyVariants("BuyCosmeticShopFence")
+            fired = fired + buyVariants("BuyCosmeticItem")
+            fired = fired + buyVariants("BuyCosmeticCrate")
+            fired = fired + buyVariants("BuyCosmeticShopFence")
         elseif shop == "Event Merchant" then
             for index, name in ipairs(DefaultEventItems) do
-                fired += buyVariants("BuyEventShopStock", name, index)
+                fired = fired + buyVariants("BuyEventShopStock", name, index)
             end
             local ok = callRemote("BuyEventShopRestock")
-            if ok then fired += 1 end
+            if ok then fired = fired + 1 end
         elseif shop == "Traveling Merchant" then
             for index, name in ipairs(DefaultEventItems) do
-                fired += buyVariants("BuyTravelingMerchantShopStock", name, index)
+                fired = fired + buyVariants("BuyTravelingMerchantShopStock", name, index)
             end
         elseif shop == "Garden Coin Shop" then
             for index, name in ipairs(DefaultEventItems) do
-                fired += buyVariants("BuyGardenCoinShopStock", name, index)
+                fired = fired + buyVariants("BuyGardenCoinShopStock", name, index)
             end
         elseif shop == "Night Event Shop" then
             for index, name in ipairs(DefaultEventItems) do
-                fired += buyVariants("BuyNightEventShopStock", name, index)
+                fired = fired + buyVariants("BuyNightEventShopStock", name, index)
             end
         elseif shop == "Easter Shop" then
             for index, name in ipairs(DefaultEventItems) do
-                fired += buyVariants("BuyEasterStock", name, index)
+                fired = fired + buyVariants("BuyEasterStock", name, index)
             end
         end
     end
@@ -1650,10 +1650,10 @@ function Actions.ClaimRewardsOnce()
             variants[#variants + 1] = {index}
             variants[#variants + 1] = {tostring(index)}
         end
-        fired += callVariants(item[1], variants, 0.03)
+        fired = fired + callVariants(item[1], variants, 0.03)
     end
-    fired += buyVariants("GardenGameSpin")
-    fired += buyVariants("SpinnerGame")
+    fired = fired + buyVariants("GardenGameSpin")
+    fired = fired + buyVariants("SpinnerGame")
     log(("Claim sweep sent %d request(s)."):format(fired))
 end
 
@@ -1669,11 +1669,11 @@ function Actions.OpenSeedPacksOnce()
             variants[#variants + 1] = {entry.Name, entry.Uuid}
         end
         variants[#variants + 1] = {entry.Instance}
-        fired += callVariants("SeedPackOpen", variants, 0.03)
+        fired = fired + callVariants("SeedPackOpen", variants, 0.03)
     end
     if fired == 0 then
         for index, name in ipairs(DefaultSeedPacks) do
-            fired += buyVariants("SeedPackOpen", name, index)
+            fired = fired + buyVariants("SeedPackOpen", name, index)
         end
     end
     log(("Seed pack opener sent %d request(s)."):format(fired))
@@ -2060,13 +2060,13 @@ local function durationTextSeconds(text, allowPlain)
         total = total or 0
         amount = tonumber(amount) or 0
         if unit == "d" then
-            total += amount * 86400
+            total = total + amount * 86400
         elseif unit == "h" then
-            total += amount * 3600
+            total = total + amount * 3600
         elseif unit == "m" then
-            total += amount * 60
+            total = total + amount * 60
         elseif unit == "s" then
-            total += amount
+            total = total + amount
         end
     end
     if total then
@@ -2494,7 +2494,7 @@ local function revealObjectContext(object, text)
     while current and depth < 10 do
         pieces[#pieces + 1] = tostring(current.Name or "")
         current = current.Parent
-        depth += 1
+        depth = depth + 1
     end
     return normalizedName(table.concat(pieces, " "))
 end
@@ -2604,11 +2604,11 @@ local function scanRevealTextObject(object)
             end
             if descendant ~= object then
                 if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
-                    block ..= "\n" .. tostring(descendant.Text or "")
-                    added += 1
+                    block = block .. "\n" .. tostring(descendant.Text or "")
+                    added = added + 1
                 elseif descendant:IsA("ProximityPrompt") then
-                    block ..= "\n" .. tostring(descendant.ActionText or "") .. "\n" .. tostring(descendant.ObjectText or "")
-                    added += 1
+                    block = block .. "\n" .. tostring(descendant.ActionText or "") .. "\n" .. tostring(descendant.ObjectText or "")
+                    added = added + 1
                 end
             end
         end
@@ -2930,7 +2930,7 @@ local function runPetTeam(selected, label)
             local ok = callRemote("ActivePetService", "Feed", entry.Uuid)
                 or callRemote("PetBoostService", "Level", entry.Uuid)
                 or callRemote("PetBoostService", "Feed", entry.Uuid)
-            if ok then fired += 1 end
+            if ok then fired = fired + 1 end
         end
     end
     if fired > 0 then
@@ -3002,13 +3002,13 @@ function Actions.PlaceEggsOnce()
         end
 
         if placed and countPhysicalEggs() > before then
-            count += 1
+            count = count + 1
         elseif entry.Instance and entry.Instance:IsA("Tool") then
             local activated = pcall(function()
                 entry.Instance:Activate()
             end)
             if activated then
-                count += 1
+                count = count + 1
             end
         end
     end
@@ -3024,7 +3024,7 @@ function Actions.FeedPetsOnce()
         if uuid then
             local ok = callRemote("ActivePetService", "Feed", uuid)
                 or callRemote("PetBoostService", "Feed", uuid)
-            if ok then fired += 1 end
+            if ok then fired = fired + 1 end
         end
     end
     log(("Feed pets sent %d request(s)."):format(fired))
@@ -3039,7 +3039,7 @@ function Actions.LevelPetsOnce()
             local ok = callRemote("PetBoostService", "Level", uuid)
                 or callRemote("PetBoostService", "XP", uuid)
                 or callRemote("ActivePetService", "Feed", uuid)
-            if ok then fired += 1 end
+            if ok then fired = fired + 1 end
         end
     end
     log(("Level pets sent %d request(s)."):format(fired))
@@ -3068,7 +3068,7 @@ function Actions.KgBoostPetsOnce()
                 or callRemote("PetBoostService", "KG", uuid)
                 or callRemote("PetBoostService", "Size", uuid)
                 or callRemote("PetBoostService", "Boost", uuid)
-            if ok then fired += 1 end
+            if ok then fired = fired + 1 end
         end
     end
     log(("KG boost pets sent %d request(s)."):format(fired))
@@ -3132,7 +3132,7 @@ function Actions.ElephantStackOnce()
         equip(elephant.Instance)
         local sent = callPetPlacement(elephant)
         if sent > 0 then
-            fired += 1
+            fired = fired + 1
             log(("Elephant stack %d/%d sent for %s."):format(index, #elephants, elephant.Name))
         end
         if index < #elephants then
@@ -3162,7 +3162,7 @@ function Actions.FavoritePetsOnce()
         end
         variants[#variants + 1] = {entry.Instance}
         variants[#variants + 1] = {entry.Instance, desired}
-        fired += callVariants("FavoriteItem", variants, 0.02)
+        fired = fired + callVariants("FavoriteItem", variants, 0.02)
     end
     log(("Favorite pets sent %d request(s)."):format(fired))
 end
@@ -3173,7 +3173,7 @@ function Actions.CollectFruitOnce()
         local ok = callRemote("HarvestRemote", entry.Instance)
             or callRemote("CollectFruit", {entry.Instance})
             or callRemote("CollectFruit", entry.Instance)
-        if ok then fired += 1 end
+        if ok then fired = fired + 1 end
     end
     log(("Fruit collect sent %d request(s)."):format(fired))
 end
@@ -3223,7 +3223,7 @@ function Actions.PlantSeedsOnce()
         local ok = callRemote("Plant", pos, entry.Name)
             or callRemote("Plant", entry.Name, pos)
             or callRemote("Plant", entry.Name)
-        if ok then fired += 1 end
+        if ok then fired = fired + 1 end
     end
     log(("Plant seeds sent %d request(s)."):format(fired))
 end
@@ -3255,7 +3255,7 @@ function Actions.SetTexturesRemoved(enabled)
     for _, descendant in ipairs(Workspace:GetDescendants()) do
         if descendant:IsA("Texture") or descendant:IsA("Decal") then
             descendant.Transparency = enabled and 1 or 0
-            changed += 1
+            changed = changed + 1
         elseif descendant:IsA("BasePart") then
             descendant.Material = enabled and Enum.Material.SmoothPlastic or descendant.Material
         end
@@ -4217,20 +4217,20 @@ task.spawn(function()
         end
 
         local active = 0
-        if Config.Hatch.AutoHatch then active += 1 end
-        if Config.Hatch.AutoPlaceEggs then active += 1 end
-        if Config.Pets.AutoFeed then active += 1 end
-        if Config.Pets.AutoLevel then active += 1 end
-        if Config.Pets.AutoKgBoost then active += 1 end
-        if Config.Pets.AutoElephantStack then active += 1 end
-        if Config.Pets.AutoFavorite then active += 1 end
-        if Config.Shops.AutoBuy then active += 1 end
-        if Config.Utility.AutoOpenPacks then active += 1 end
-        if Config.Utility.AutoCollectFruit then active += 1 end
-        if Config.Utility.AutoSellFruit then active += 1 end
-        if Config.Utility.AutoSortBackpack then active += 1 end
-        if Config.Utility.AutoPlantSeeds then active += 1 end
-        if Config.Utility.AutoRebirth then active += 1 end
+        if Config.Hatch.AutoHatch then active = active + 1 end
+        if Config.Hatch.AutoPlaceEggs then active = active + 1 end
+        if Config.Pets.AutoFeed then active = active + 1 end
+        if Config.Pets.AutoLevel then active = active + 1 end
+        if Config.Pets.AutoKgBoost then active = active + 1 end
+        if Config.Pets.AutoElephantStack then active = active + 1 end
+        if Config.Pets.AutoFavorite then active = active + 1 end
+        if Config.Shops.AutoBuy then active = active + 1 end
+        if Config.Utility.AutoOpenPacks then active = active + 1 end
+        if Config.Utility.AutoCollectFruit then active = active + 1 end
+        if Config.Utility.AutoSellFruit then active = active + 1 end
+        if Config.Utility.AutoSortBackpack then active = active + 1 end
+        if Config.Utility.AutoPlantSeeds then active = active + 1 end
+        if Config.Utility.AutoRebirth then active = active + 1 end
         setStatus(active > 0 and (tostring(active) .. " active") or "Idle")
 
         task.wait(0.2)
