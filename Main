@@ -1,4 +1,4 @@
-local url = "https://raw.githubusercontent.com/jimmynewtronamongus/Main/refs/heads/codex-initial-link/MainSource?cb=bootstrap-1"
+local url = "https://raw.githubusercontent.com/jimmynewtronamongus/Main/refs/heads/codex-initial-link/MainSource?cb=" .. tostring(os.time())
 local ok, source = pcall(function()
     return game:HttpGet(url)
 end)

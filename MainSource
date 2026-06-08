@@ -479,15 +479,16 @@ local Theme = {
 }
 
 local SectionDescriptions = {
-    Status = "Scan your backpack, character, and placed pets before running automations.",
-    Hatch = "Choose eggs, place available egg tools, and hatch ready physical eggs.",
-    ["Keep Hatched Pets"] = "Favorite newly hatched pets by egg rule, mutation, name, or base KG.",
-    Pets = "Run pet feed, level, and favorite actions on selected pets. Empty selections mean all.",
-    Shops = "Choose shop groups to run on the buy timer.",
-    ["Seed Packs"] = "Open selected seed packs on a timer.",
-    ["Hatch Teams"] = "Seal, Koi, Bronto, and Elephant-style support teams auto-pick the highest KG matching pet found.",
-    ["Pet Teams"] = "Feed uses selected pets. Leveling is manual selection. KG boost auto-requires your highest KG Elephant.",
+    Status = "Quick scan and current inventory counts.",
+    ["Egg Automation"] = "Pick eggs once, then control placing, hatching, and ESP from here.",
+    ["Keep Rules"] = "Choose what newly hatched pets are protected before selling.",
+    ["Support Teams"] = "Seal, Koi, Bronto, and hatch-reduction support pets.",
+    ["Pet Automation"] = "Feed, level, KG boost, elephant stack, and favorite pets.",
+    ["Pet Targets"] = "Selections used by pet automation. Empty feed selection means all pets.",
+    Shops = "Choose shops and run automatic buying.",
+    ["Seed Packs"] = "Open selected seed packs automatically.",
     Utility = "Fruit, planting, rebirth, visual cleanup, and general helpers.",
+    Bundles = "Prompt bundle purchases from one place.",
     Activity = "Recent actions, missing remotes, and refresh status.",
 }
 
@@ -4015,23 +4016,10 @@ do
     summaryLabel.TextXAlignment = Enum.TextXAlignment.Left
     summaryLabel.Parent = s
     button(s, "Refresh Inventory", refreshInventory)
-
-    local guide = section(dashboard, "How Selection Works")
-    local guideText = Instance.new("TextLabel")
-    guideText.BackgroundTransparency = 1
-    guideText.Size = UDim2.new(1, 0, 0, 72)
-    guideText.Font = Enum.Font.Gotham
-    guideText.Text = "Empty selectors mean all available items. Refresh Inventory after joining, hatching, buying, or moving tools."
-    guideText.TextColor3 = Theme.Muted
-    guideText.TextSize = 12
-    guideText.TextWrapped = true
-    guideText.TextXAlignment = Enum.TextXAlignment.Left
-    guideText.TextYAlignment = Enum.TextYAlignment.Top
-    guideText.Parent = guide
 end
 
 do
-    local auto = section(hatch, "Hatch")
+    local auto = section(hatch, "Egg Automation")
     toggle(auto, "Auto Hatch Ready Eggs", Config.Hatch.AutoHatch, function(v) Config.Hatch.AutoHatch = v end)
     toggle(auto, "Auto Place Eggs", Config.Hatch.AutoPlaceEggs, function(v) Config.Hatch.AutoPlaceEggs = v end)
     toggle(auto, "Egg ESP", Config.Hatch.EggEsp, function(v)
@@ -4042,40 +4030,19 @@ do
             clearEggEsp()
         end
     end)
+    multiselect(auto, "Eggs To Hatch", function() return Options.Eggs end, Config.Hatch.SelectedEggs, refreshUiControls)
+    input(auto, "Max Placed Eggs", Config.Hatch.MaxEggsPlaced, function(v) Config.Hatch.MaxEggsPlaced = math.max(1, math.floor(tonumber(v) or MAX_EGGS_PLACED)) end)
 
-    local timing = section(hatch, "Timing & Limits")
-    input(timing, "Hatch Interval", Config.Hatch.HatchInterval, function(v) Config.Hatch.HatchInterval = math.max(0.5, tonumber(v) or 1.5) end)
-    input(timing, "Place Interval", Config.Hatch.PlaceInterval, function(v) Config.Hatch.PlaceInterval = math.max(1, tonumber(v) or 8) end)
-    input(timing, "Max Eggs Placed", Config.Hatch.MaxEggsPlaced, function(v) Config.Hatch.MaxEggsPlaced = math.max(1, math.floor(tonumber(v) or MAX_EGGS_PLACED)) end)
-
-    local selected = section(hatch, "Egg Selection")
-    multiselect(selected, "Selected Eggs", function() return Options.Eggs end, Config.Hatch.SelectedEggs, refreshUiControls)
-
-    local keep = section(hatch, "Keep Hatched Pets")
+    local keep = section(hatch, "Keep Rules")
     toggle(keep, "Keep Matching Mutations", Config.Hatch.KeepMutatedPets, function(v) Config.Hatch.KeepMutatedPets = v end)
     multiselect(keep, "Keep Mutations", function() return Options.Mutations end, Config.Hatch.KeepMutations, nil)
-    eggPetRuleEditor(keep)
-    input(keep, "Egg Rule Name", Config.Hatch.RuleEggName, function(v)
-        Config.Hatch.RuleEggName = canonicalEggName(v)
-        setEggPetRule()
-        refreshUiControls()
-    end)
-    input(keep, "Keep Pets For Egg", Config.Hatch.RuleKeepPets, function(v)
-        Config.Hatch.RuleKeepPets = v
-        setEggPetRule()
-        refreshUiControls()
-    end)
-    input(keep, "Sell Pets For Egg", Config.Hatch.RuleSellPets, function(v)
-        Config.Hatch.RuleSellPets = v
-        setEggPetRule()
-        refreshUiControls()
-    end)
     input(keep, "Always Keep Base KG", Config.Hatch.AlwaysKeepBaseKg, function(v) Config.Hatch.AlwaysKeepBaseKg = math.max(0, tonumber(v) or 3) end)
     toggle(keep, "Only Sell New Hatched", Config.Hatch.SellUnkeptHatchedPets, function(v) Config.Hatch.SellUnkeptHatchedPets = v end)
     toggle(keep, "Only Sell With Seal Team", Config.Hatch.OnlySellWithSealTeam, function(v) Config.Hatch.OnlySellWithSealTeam = v end)
     toggle(keep, "Only Sell Level 1", Config.Hatch.SellOnlyLevelOne, function(v) Config.Hatch.SellOnlyLevelOne = v end)
+    eggPetRuleEditor(keep)
 
-    local teams = section(hatch, "Hatch Teams")
+    local teams = section(hatch, "Support Teams")
     multiselect(teams, "Egg Hatch Reduction Team", petOptionNames, Config.Hatch.HatchReductionTeam, nil)
     multiselect(teams, "Seal Team", petOptionNames, Config.Hatch.SealTeam, nil)
     multiselect(teams, "Koi Team", petOptionNames, Config.Hatch.KoiTeam, nil)
@@ -4083,48 +4050,32 @@ do
 end
 
 do
-    local auto = section(pets, "Pets")
+    local auto = section(pets, "Pet Automation")
     toggle(auto, "Auto Feed", Config.Pets.AutoFeed, function(v) Config.Pets.AutoFeed = v end)
     toggle(auto, "Auto Level", Config.Pets.AutoLevel, function(v) Config.Pets.AutoLevel = v end)
     toggle(auto, "Auto KG Boost", Config.Pets.AutoKgBoost, function(v) Config.Pets.AutoKgBoost = v end)
     toggle(auto, "Auto Elephant Stack", Config.Pets.AutoElephantStack, function(v) Config.Pets.AutoElephantStack = v end)
     toggle(auto, "Auto Favorite", Config.Pets.AutoFavorite, function(v) Config.Pets.AutoFavorite = v end)
+    input(auto, "Stop KG Boost At", Config.Pets.KgBoostStopAt, function(v) Config.Pets.KgBoostStopAt = math.max(0.1, tonumber(v) or 5.4) end)
+    input(auto, "Elephant Delay", Config.Pets.ElephantStackDelay, function(v) Config.Pets.ElephantStackDelay = math.max(0.1, tonumber(v) or 1.7) end)
+    input(auto, "Elephant Count", Config.Pets.ElephantStackCount, function(v) Config.Pets.ElephantStackCount = math.max(1, math.floor(tonumber(v) or 3)) end)
 
-    local timing = section(pets, "Pet Timing")
-    input(timing, "Feed Interval", Config.Pets.FeedInterval, function(v) Config.Pets.FeedInterval = math.max(0.5, tonumber(v) or 2) end)
-    input(timing, "Level Interval", Config.Pets.LevelInterval, function(v) Config.Pets.LevelInterval = math.max(1, tonumber(v) or 5) end)
-    input(timing, "KG Boost Interval", Config.Pets.KgBoostInterval, function(v) Config.Pets.KgBoostInterval = math.max(1, tonumber(v) or 5) end)
-    input(timing, "Stop KG Boost At", Config.Pets.KgBoostStopAt, function(v) Config.Pets.KgBoostStopAt = math.max(0.1, tonumber(v) or 5.4) end)
-    input(timing, "Elephant Stack Interval", Config.Pets.ElephantStackInterval, function(v) Config.Pets.ElephantStackInterval = math.max(5, tonumber(v) or 30) end)
-    input(timing, "Elephant Stack Delay", Config.Pets.ElephantStackDelay, function(v) Config.Pets.ElephantStackDelay = math.max(0.1, tonumber(v) or 1.7) end)
-    input(timing, "Elephant Stack Count", Config.Pets.ElephantStackCount, function(v) Config.Pets.ElephantStackCount = math.max(1, math.floor(tonumber(v) or 3)) end)
-    input(timing, "Elephant Target Min Level", Config.Pets.ElephantStackMinTargetLevel, function(v) Config.Pets.ElephantStackMinTargetLevel = math.max(1, math.floor(tonumber(v) or 50)) end)
-
-    local stack = section(pets, "Elephant Stack")
-    button(stack, "Run Elephant Stack", Actions.ElephantStackOnce)
-
-    local selected = section(pets, "Pet Selection")
-    multiselect(selected, "Pets To Feed", petOptionNames, Config.Pets.SelectedPets, nil)
-
-    local teams = section(pets, "Pet Teams")
-    multiselect(teams, "Leveling Team", petOptionNames, Config.Pets.LevelTeam, nil)
-    multiselect(teams, "KG Boost Team", petOptionNames, Config.Pets.KgBoostTeam, nil)
+    local targets = section(pets, "Pet Targets")
+    multiselect(targets, "Pets To Feed", petOptionNames, Config.Pets.SelectedPets, nil)
+    multiselect(targets, "Leveling Team", petOptionNames, Config.Pets.LevelTeam, nil)
+    multiselect(targets, "KG Boost Team", petOptionNames, Config.Pets.KgBoostTeam, nil)
 end
 
 do
     local auto = section(shops, "Shops")
     toggle(auto, "Auto Buy", Config.Shops.AutoBuy, function(v) Config.Shops.AutoBuy = v end)
-    input(auto, "Buy Interval", Config.Shops.BuyInterval, function(v) Config.Shops.BuyInterval = math.max(1, tonumber(v) or 3) end)
-
-    local selected = section(shops, "Shop Selection")
-    multiselect(selected, "Selected Shops", function() return Options.Shops end, Config.Shops.SelectedShops, nil)
+    multiselect(auto, "Selected Shops", function() return Options.Shops end, Config.Shops.SelectedShops, nil)
 
 end
 
 do
     local packs = section(utility, "Seed Packs")
     toggle(packs, "Auto Open Seed Packs", Config.Utility.AutoOpenPacks, function(v) Config.Utility.AutoOpenPacks = v end)
-    input(packs, "Pack Interval", Config.Utility.PackInterval, function(v) Config.Utility.PackInterval = math.max(3, tonumber(v) or 12) end)
     multiselect(packs, "Selected Seed Packs", function() return Options.SeedPacks end, Config.Utility.SelectedPacks, nil)
 
     local farm = section(utility, "Utility")
@@ -4133,12 +4084,7 @@ do
     toggle(farm, "Auto Sort Backpack", Config.Utility.AutoSortBackpack, function(v) Config.Utility.AutoSortBackpack = v end)
     toggle(farm, "Auto Plant Seeds", Config.Utility.AutoPlantSeeds, function(v) Config.Utility.AutoPlantSeeds = v end)
     toggle(farm, "Auto Rebirth", Config.Utility.AutoRebirth, function(v) Config.Utility.AutoRebirth = v end)
-
-    local inventoryTools = section(utility, "Inventory Tools")
-    button(inventoryTools, "Sell Inventory", Actions.SellFruitOnce)
-    button(inventoryTools, "Sort Backpack", Actions.SortBackpackOnce)
-    button(inventoryTools, "Refresh Active Pets UI", Actions.RefreshActivePetsUiOnce)
-    button(inventoryTools, "Close Game Frames", Actions.CloseFramesOnce)
+    multiselect(farm, "Seeds To Plant", function() return Options.Seeds end, Config.Utility.SelectedSeeds, nil)
 
     local bundles = section(utility, "Bundles")
     for _, product in ipairs(DevProducts.Bundles) do
@@ -4151,16 +4097,6 @@ do
             end
         end)
     end
-
-    local timing = section(utility, "Utility Timing")
-    input(timing, "Fruit Interval", Config.Utility.FruitInterval, function(v) Config.Utility.FruitInterval = math.max(1, tonumber(v) or 2) end)
-    input(timing, "Sort Interval", Config.Utility.SortInterval, function(v) Config.Utility.SortInterval = math.max(5, tonumber(v) or 30) end)
-    input(timing, "Plant Interval", Config.Utility.PlantInterval, function(v) Config.Utility.PlantInterval = math.max(0.2, tonumber(v) or 0.6) end)
-    input(timing, "Rebirth Interval", Config.Utility.RebirthInterval, function(v) Config.Utility.RebirthInterval = math.max(1, tonumber(v) or 10) end)
-    input(timing, "Rebirth Cooldown", Config.Utility.RebirthCooldown, function(v) Config.Utility.RebirthCooldown = math.max(60, tonumber(v) or 14400) end)
-
-    local selected = section(utility, "Seed Selection")
-    multiselect(selected, "Selected Seeds", function() return Options.Seeds end, Config.Utility.SelectedSeeds, nil)
 
     local visual = section(utility, "Visual Helpers")
     toggle(visual, "Anti Lag", Config.Utility.AntiLag, function(v) Config.Utility.AntiLag = v; Actions.SetAntiLag(v) end)
