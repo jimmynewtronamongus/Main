@@ -277,6 +277,7 @@ local State = {
     EggRevealTextHooked = false,
     LastRebirthAttempt = 0,
     LastRebirthSkipLog = 0,
+    PetNamesByUuid = {},
 }
 
 function copyList(list)
@@ -672,6 +673,16 @@ function firstUuid(instance)
     return nil
 end
 
+function isUuidLike(value)
+    local text = tostring(value or "")
+    if text == "" then
+        return false
+    end
+    local compact = text:gsub("%-", "")
+    return compact:match("^%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x$") ~= nil
+        or text:lower():find("uuid", 1, true) ~= nil
+end
+
 function normalizedName(value)
     return tostring(value or "")
         :lower()
@@ -760,12 +771,85 @@ function petMutationNames(instance)
     return names
 end
 
+function petDisplayField(instance)
+    if not instance then
+        return nil
+    end
+    for _, key in ipairs({"PetName", "PetType", "Pet", "DisplayName", "ItemName", "Type", "Name"}) do
+        local ok, value = pcall(function()
+            return instance:GetAttribute(key)
+        end)
+        if ok and value and tostring(value) ~= "" and not isUuidLike(value) then
+            return petBaseName(value)
+        end
+        local child = instance:FindFirstChild(key, true)
+        if child and child:IsA("ValueBase") and child.Value and tostring(child.Value) ~= "" and not isUuidLike(child.Value) then
+            return petBaseName(child.Value)
+        end
+    end
+    return nil
+end
+
+function petKnownNameFromText(instance)
+    local text = normalizedName(textOf(instance))
+    local best
+    local function check(name)
+        local needle = normalizedName(name)
+        if needle ~= "" and text:find(needle, 1, true) and (not best or #needle > #normalizedName(best)) then
+            best = name
+        end
+    end
+    for _, pets in pairs(DefaultEggPets) do
+        for _, petName in ipairs(pets) do
+            check(petName)
+        end
+    end
+    local knownByEgg = Config and Config.Hatch and Config.Hatch.KnownPetsByEgg
+    if type(knownByEgg) == "table" then
+        for _, pets in pairs(knownByEgg) do
+            if type(pets) == "table" then
+                for _, petName in ipairs(pets) do
+                    check(petName)
+                end
+            end
+        end
+    end
+    return best
+end
+
+function petDisplayName(instance)
+    if not instance then
+        return "Unknown Pet"
+    end
+    local uuid = firstUuid(instance)
+    if uuid and State.PetNamesByUuid[uuid] then
+        return State.PetNamesByUuid[uuid]
+    end
+    local displayName = petDisplayField(instance) or petKnownNameFromText(instance)
+    local baseName = petBaseName(instance.Name)
+    if not displayName and baseName ~= "" and not isUuidLike(baseName) then
+        displayName = baseName
+    end
+    displayName = displayName or "Unknown Pet"
+    if uuid and displayName ~= "Unknown Pet" then
+        State.PetNamesByUuid[uuid] = displayName
+    end
+    return displayName
+end
+
 function addEntry(bucket, displayName, instance)
     displayName = tostring(displayName or instance.Name)
+    if bucket == Inventory.Pets then
+        displayName = petDisplayName(instance)
+    end
+    local uuid = firstUuid(instance)
+    if uuid and displayName ~= "" and displayName ~= "Unknown Pet" and not isUuidLike(displayName) then
+        State.PetNamesByUuid[uuid] = displayName
+    end
     local entry = {
         Name = displayName,
         Instance = instance,
-        Uuid = firstUuid(instance),
+        Uuid = uuid,
     }
     bucket[#bucket + 1] = entry
     return entry
@@ -1020,7 +1104,8 @@ function refreshInventory()
                     end
                     if bucket then
                         local displayName = bucket == "Eggs" and canonicalEggName(item.Name) or (bucket == "Pets" and petBaseName(item.Name) or item.Name)
-                        addEntry(Inventory[bucket], displayName, item)
+                        local entry = addEntry(Inventory[bucket], displayName, item)
+                        displayName = entry.Name
                         if not seen[bucket .. displayName] then
                             seen[bucket .. displayName] = true
                             Options[bucket][#Options[bucket] + 1] = displayName
@@ -1043,8 +1128,8 @@ function refreshInventory()
     local petMover = petsPhysical and petsPhysical:FindFirstChild("PetMover")
     if petMover then
         for _, pet in ipairs(petMover:GetChildren()) do
-            local displayName = petBaseName(pet.Name)
-            addEntry(Inventory.Pets, displayName, pet)
+            local entry = addEntry(Inventory.Pets, petDisplayName(pet), pet)
+            local displayName = entry.Name
             if not seen["Pets" .. displayName] then
                 seen["Pets" .. displayName] = true
                 Options.Pets[#Options.Pets + 1] = displayName
