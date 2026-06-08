@@ -25,7 +25,7 @@ if not player then
     return
 end
 
-local function guiParent()
+function guiParent()
     local ok, coreGui = pcall(function()
         return game:GetService("CoreGui")
     end)
@@ -279,7 +279,7 @@ local State = {
     LastRebirthSkipLog = 0,
 }
 
-local function copyList(list)
+function copyList(list)
     local out = {}
     for _, value in ipairs(list or {}) do
         out[#out + 1] = value
@@ -287,7 +287,7 @@ local function copyList(list)
     return out
 end
 
-local function selectedFrom(list)
+function selectedFrom(list)
     local selected = {__order = {}}
     for _, value in ipairs(list or {}) do
         selected[value] = true
@@ -296,7 +296,7 @@ local function selectedFrom(list)
     return selected
 end
 
-local function selectedNames(selected)
+function selectedNames(selected)
     local names = {}
     for _, name in ipairs((selected and selected.__order) or {}) do
         if selected[name] then
@@ -306,7 +306,7 @@ local function selectedNames(selected)
     return names
 end
 
-local function setSelectionFromList(selected, list)
+function setSelectionFromList(selected, list)
     selected = selected or {}
     for key in pairs(selected) do
         selected[key] = nil
@@ -322,11 +322,11 @@ local function setSelectionFromList(selected, list)
     return selected
 end
 
-local function selectionKey(value)
+function selectionKey(value)
     return tostring(value or ""):lower():gsub("[^%w]+", "")
 end
 
-local function hasSelection(selected, name)
+function hasSelection(selected, name)
     local order = selected and selected.__order
     if not order or #order == 0 then
         return true
@@ -343,7 +343,7 @@ local function hasSelection(selected, name)
     return false
 end
 
-local function cleanItemName(name)
+function cleanItemName(name)
     return tostring(name or "")
         :gsub("%s+x%d+$", "")
         :gsub("%s+X%d+$", "")
@@ -355,7 +355,7 @@ local function cleanItemName(name)
         :gsub("%s+$", "")
 end
 
-local function canonicalEggName(name)
+function canonicalEggName(name)
     local cleaned = cleanItemName(name)
     local lower = cleaned:lower()
     for _, eggName in ipairs(DefaultEggs) do
@@ -366,7 +366,7 @@ local function canonicalEggName(name)
     return cleaned
 end
 
-local function hasEggSelection(selected, name)
+function hasEggSelection(selected, name)
     local order = selected and selected.__order
     if not order or #order == 0 then
         return true
@@ -386,7 +386,7 @@ local function hasEggSelection(selected, name)
     return false
 end
 
-local function normalizeEggSelection()
+function normalizeEggSelection()
     local names = selectedNames(Config.Hatch.SelectedEggs)
     if #names == 0 then
         return
@@ -398,7 +398,7 @@ local function normalizeEggSelection()
     Config.Hatch.SelectedEggs = setSelectionFromList(Config.Hatch.SelectedEggs, cleaned)
 end
 
-local function mergeConfig(target, source, allowUnknown)
+function mergeConfig(target, source, allowUnknown)
     if type(target) ~= "table" or type(source) ~= "table" then
         return
     end
@@ -411,7 +411,7 @@ local function mergeConfig(target, source, allowUnknown)
     end
 end
 
-local function loadConfig()
+function loadConfig()
     if type(readfile) ~= "function" or type(isfile) ~= "function" or not isfile(CONFIG_FILE) then
         return
     end
@@ -435,7 +435,7 @@ local function loadConfig()
 end
 
 local saveQueued = false
-local function saveConfigSoon()
+function saveConfigSoon()
     if saveQueued then
         return
     end
@@ -497,20 +497,20 @@ local logLabel
 local statusLabel
 local summaryLabel
 
-local function corner(parent, radius)
+function corner(parent, radius)
     local c = Instance.new("UICorner")
     c.CornerRadius = UDim.new(0, radius or 8)
     c.Parent = parent
 end
 
-local function stroke(parent, color, thickness)
+function stroke(parent, color, thickness)
     local s = Instance.new("UIStroke")
     s.Color = color or Theme.Stroke
     s.Thickness = thickness or 1
     s.Parent = parent
 end
 
-local function pad(parent, all)
+function pad(parent, all)
     local p = Instance.new("UIPadding")
     p.PaddingTop = UDim.new(0, all)
     p.PaddingBottom = UDim.new(0, all)
@@ -519,7 +519,7 @@ local function pad(parent, all)
     p.Parent = parent
 end
 
-local function log(message)
+function log(message)
     local line = os.date("%H:%M:%S") .. " | " .. tostring(message)
     State.Logs[#State.Logs + 1] = line
     if #State.Logs > 140 then
@@ -537,17 +537,17 @@ local function log(message)
     end
 end
 
-local function setStatus(text)
+function setStatus(text)
     if statusLabel then
         statusLabel.Text = text
     end
 end
 
-local function gameEvents()
+function gameEvents()
     return ReplicatedStorage:FindFirstChild("GameEvents")
 end
 
-local function remoteByPath(path)
+function remoteByPath(path)
     local node = gameEvents()
     for _, name in ipairs(path or {}) do
         node = node and node:FindFirstChild(name)
@@ -555,7 +555,7 @@ local function remoteByPath(path)
     return node
 end
 
-local function remote(name)
+function remote(name)
     local path = Remotes[name]
     if not path then
         return nil
@@ -580,7 +580,7 @@ local function remote(name)
     return nil
 end
 
-local function callRemote(name, ...)
+function callRemote(name, ...)
     local r = remote(name)
     if not r then
         return false, nil
@@ -598,7 +598,7 @@ local function callRemote(name, ...)
     return false, nil
 end
 
-local function callVariants(name, variants, delaySeconds)
+function callVariants(name, variants, delaySeconds)
     local count = 0
     for _, args in ipairs(variants or {{}}) do
         local ok = callRemote(name, unpackArgs(args))
@@ -612,7 +612,7 @@ local function callVariants(name, variants, delaySeconds)
     return count
 end
 
-local function buyVariants(remoteName, itemName, index)
+function buyVariants(remoteName, itemName, index)
     local variants = {}
     if itemName and itemName ~= "" then
         variants[#variants + 1] = {itemName}
@@ -635,7 +635,7 @@ local function buyVariants(remoteName, itemName, index)
     return callVariants(remoteName, variants, 0.02)
 end
 
-local function textOf(instance)
+function textOf(instance)
     local pieces = {instance.Name}
     local ok, attrs = pcall(function()
         return instance:GetAttributes()
@@ -655,7 +655,7 @@ local function textOf(instance)
     return table.concat(pieces, " "):lower()
 end
 
-local function firstUuid(instance)
+function firstUuid(instance)
     local names = {"UUID", "Uuid", "PetUUID", "PetUuid", "ItemUUID", "ItemUuid", "EggUUID", "EggUuid"}
     for _, name in ipairs(names) do
         local ok, value = pcall(function()
@@ -672,17 +672,17 @@ local function firstUuid(instance)
     return nil
 end
 
-local function normalizedName(value)
+function normalizedName(value)
     return tostring(value or "")
         :lower()
         :gsub("[^%w]+", "")
 end
 
-local function trim(value)
+function trim(value)
     return tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
 end
 
-local function csvList(text)
+function csvList(text)
     local out = {}
     local seen = {}
     for value in tostring(text or ""):gmatch("[^,]+") do
@@ -696,7 +696,7 @@ local function csvList(text)
     return out
 end
 
-local function addUnique(list, seen, value)
+function addUnique(list, seen, value)
     value = tostring(value or "")
     if value == "" then
         return
@@ -708,7 +708,7 @@ local function addUnique(list, seen, value)
     end
 end
 
-local function petMutationNames(instance)
+function petMutationNames(instance)
     local names = {}
     local seen = {}
     if not instance then
@@ -760,7 +760,7 @@ local function petMutationNames(instance)
     return names
 end
 
-local function addEntry(bucket, displayName, instance)
+function addEntry(bucket, displayName, instance)
     displayName = tostring(displayName or instance.Name)
     local entry = {
         Name = displayName,
@@ -771,13 +771,13 @@ local function addEntry(bucket, displayName, instance)
     return entry
 end
 
-local function sortOptions(list)
+function sortOptions(list)
     table.sort(list, function(a, b)
         return tostring(a) < tostring(b)
     end)
 end
 
-local function knownPetNameMatches(value)
+function knownPetNameMatches(value)
     local haystack = normalizedName(value)
     if haystack == "" then
         return false
@@ -806,7 +806,7 @@ local function knownPetNameMatches(value)
     return false
 end
 
-local function isPetItem(instance)
+function isPetItem(instance)
     local lowerName = tostring(instance and instance.Name or ""):lower()
     if lowerName:find("egg", 1, true)
         or lowerName:find("seed", 1, true)
@@ -846,7 +846,7 @@ local function isPetItem(instance)
     return false
 end
 
-local function isPetInventoryEntry(entry)
+function isPetInventoryEntry(entry)
     local instance = entry and entry.Instance
     if not instance then
         return false
@@ -858,7 +858,7 @@ local function isPetInventoryEntry(entry)
     return isPetItem(instance)
 end
 
-local function petOptionNames()
+function petOptionNames()
     local names = {}
     local seen = {}
     for _, entry in ipairs(Inventory.Pets or {}) do
@@ -870,7 +870,7 @@ local function petOptionNames()
     return names
 end
 
-local function pruneSelectionToOptions(selection, options)
+function pruneSelectionToOptions(selection, options)
     local valid = {}
     for _, option in ipairs(options or {}) do
         valid[option] = true
@@ -891,7 +891,7 @@ local function pruneSelectionToOptions(selection, options)
     end
 end
 
-local function prunePetSelections()
+function prunePetSelections()
     local options = petOptionNames()
     pruneSelectionToOptions(Config.Hatch.HatchReductionTeam, options)
     pruneSelectionToOptions(Config.Hatch.SealTeam, options)
@@ -902,13 +902,13 @@ local function prunePetSelections()
     pruneSelectionToOptions(Config.Pets.KgBoostTeam, options)
 end
 
-local function petKgFromName(name)
+function petKgFromName(name)
     local text = tostring(name or "")
     local value = text:match("([%d%.]+)%s*[Kk][Gg]")
     return tonumber(value)
 end
 
-local function petBaseName(name)
+function petBaseName(name)
     return tostring(name or "")
         :gsub("%s*%[[^%]]+%]", "")
         :gsub("%s+", " ")
@@ -916,18 +916,18 @@ local function petBaseName(name)
         :gsub("%s+$", "")
 end
 
-local function petKg(entry)
+function petKg(entry)
     return petKgFromName(entry and entry.Name) or petKgFromName(entry and entry.Instance and textOf(entry.Instance)) or 0
 end
 
-local function petNameMatches(entry, target)
+function petNameMatches(entry, target)
     local name = normalizedName(entry and entry.Name)
     local instanceName = normalizedName(entry and entry.Instance and entry.Instance.Name)
     local needle = normalizedName(target)
     return name:find(needle, 1, true) ~= nil or instanceName:find(needle, 1, true) ~= nil
 end
 
-local function highestPetByName(target)
+function highestPetByName(target)
     local best
     local bestKg = -1
     for _, entry in ipairs(Inventory.Pets or {}) do
@@ -942,7 +942,7 @@ local function highestPetByName(target)
     return best
 end
 
-local function highestPetsByName(target, limit)
+function highestPetsByName(target, limit)
     local matches = {}
     for _, entry in ipairs(Inventory.Pets or {}) do
         if isPetInventoryEntry(entry) and petNameMatches(entry, target) then
@@ -959,7 +959,7 @@ local function highestPetsByName(target, limit)
     return out
 end
 
-local function setSinglePetSelection(selection, entry)
+function setSinglePetSelection(selection, entry)
     if entry then
         setSelectionFromList(selection, {entry.Name})
     else
@@ -967,14 +967,14 @@ local function setSinglePetSelection(selection, entry)
     end
 end
 
-local function autoSelectSpecificPetTeams()
+function autoSelectSpecificPetTeams()
     setSinglePetSelection(Config.Hatch.SealTeam, highestPetByName("Seal"))
     setSinglePetSelection(Config.Hatch.KoiTeam, highestPetByName("Koi"))
     setSinglePetSelection(Config.Hatch.BrontoTeam, highestPetByName("Bronto"))
     setSinglePetSelection(Config.Pets.KgBoostTeam, highestPetByName("Elephant"))
 end
 
-local function sealTeamAvailable()
+function sealTeamAvailable()
     if #(selectedNames(Config.Hatch.SealTeam)) == 0 then
         return false
     end
@@ -989,7 +989,7 @@ local function sealTeamAvailable()
     return false
 end
 
-local function refreshInventory()
+function refreshInventory()
     for key in pairs(Inventory) do
         Inventory[key] = {}
     end
@@ -1108,7 +1108,7 @@ local function refreshInventory()
     log("Inventory refreshed.")
 end
 
-local function equip(instance)
+function equip(instance)
     if not instance then
         return false
     end
@@ -1126,7 +1126,7 @@ local function equip(instance)
     return false
 end
 
-local function selectedEntries(bucket, selected)
+function selectedEntries(bucket, selected)
     local out = {}
     local empty = #(selectedNames(selected)) == 0
     for _, entry in ipairs(Inventory[bucket] or {}) do
@@ -1138,7 +1138,7 @@ local function selectedEntries(bucket, selected)
     return out
 end
 
-local function mutationMatchesKeep(mutations)
+function mutationMatchesKeep(mutations)
     local selected = Config.Hatch.KeepMutations or {}
     for _, mutation in ipairs(mutations or {}) do
         local mutationKey = normalizedName(mutation)
@@ -1151,7 +1151,7 @@ local function mutationMatchesKeep(mutations)
     return nil
 end
 
-local function petEntryKey(entry)
+function petEntryKey(entry)
     if entry.Uuid then
         return "uuid:" .. entry.Uuid
     end
@@ -1167,7 +1167,7 @@ local function petEntryKey(entry)
     return "name:" .. tostring(entry.Name)
 end
 
-local function capturePetKeys()
+function capturePetKeys()
     local keys = {}
     refreshInventory()
     for _, entry in ipairs(Inventory.Pets or {}) do
@@ -1176,7 +1176,7 @@ local function capturePetKeys()
     return keys
 end
 
-local function favoritePetEntry(entry)
+function favoritePetEntry(entry)
     local variants = {}
     if entry.Uuid then
         variants[#variants + 1] = {entry.Uuid, true}
@@ -1189,12 +1189,12 @@ local function favoritePetEntry(entry)
     return callVariants("FavoriteItem", variants, 0.02)
 end
 
-local function petAge(entry)
+function petAge(entry)
     local text = tostring(entry and entry.Name or "") .. " " .. tostring(entry and entry.Instance and textOf(entry.Instance) or "")
     return tonumber(text:match("[Aa]ge%s*(%d+)")) or tonumber(text:match("%[Age%s*(%d+)%]")) or 1
 end
 
-local function petLevel(entry)
+function petLevel(entry)
     local instance = entry and entry.Instance
     local best = 0
     local function add(value)
@@ -1225,7 +1225,7 @@ local function petLevel(entry)
     return best > 0 and best or petAge(entry)
 end
 
-local function petBaseKg(entry)
+function petBaseKg(entry)
     local instance = entry and entry.Instance
     if instance then
         for _, key in ipairs({"BaseWeight", "BaseKG", "BaseKg", "BaseMass", "Weight", "KG", "Kg"}) do
@@ -1244,7 +1244,7 @@ local function petBaseKg(entry)
     return petKg(entry)
 end
 
-local function highestLevelPet(minLevel, excludeName)
+function highestLevelPet(minLevel, excludeName)
     local best
     local bestLevel = -1
     for _, entry in ipairs(Inventory.Pets or {}) do
@@ -1259,7 +1259,7 @@ local function highestLevelPet(minLevel, excludeName)
     return best, bestLevel
 end
 
-local function petNameMatchesList(entry, names)
+function petNameMatchesList(entry, names)
     if not names or #names == 0 then
         return false
     end
@@ -1276,21 +1276,21 @@ local function petNameMatchesList(entry, names)
     return false
 end
 
-local function ensureEggPetRules()
+function ensureEggPetRules()
     if type(Config.Hatch.PetRulesByEgg) ~= "table" then
         Config.Hatch.PetRulesByEgg = {}
     end
     return Config.Hatch.PetRulesByEgg
 end
 
-local function ensureKnownEggPets()
+function ensureKnownEggPets()
     if type(Config.Hatch.KnownPetsByEgg) ~= "table" then
         Config.Hatch.KnownPetsByEgg = {}
     end
     return Config.Hatch.KnownPetsByEgg
 end
 
-local function ensureEggPetRule(eggName)
+function ensureEggPetRule(eggName)
     eggName = canonicalEggName(eggName)
     if eggName == "" then
         return nil
@@ -1313,7 +1313,7 @@ local function ensureEggPetRule(eggName)
     return rule
 end
 
-local function setEggPetRule()
+function setEggPetRule()
     local eggName = canonicalEggName(Config.Hatch.RuleEggName)
     if eggName == "" then
         return
@@ -1325,13 +1325,13 @@ local function setEggPetRule()
     rule.Sell = sellPets
 end
 
-local function eggPetRule(eggName)
+function eggPetRule(eggName)
     local rules = ensureEggPetRules()
     local canonical = canonicalEggName(eggName)
     return rules[canonical] or rules[tostring(eggName or "")]
 end
 
-local function possiblePetsForEgg(eggName)
+function possiblePetsForEgg(eggName)
     eggName = canonicalEggName(eggName)
     local pets = {}
     local seen = {}
@@ -1362,7 +1362,7 @@ local function possiblePetsForEgg(eggName)
     return pets
 end
 
-local function rememberEggPet(eggName, petName)
+function rememberEggPet(eggName, petName)
     eggName = canonicalEggName(eggName)
     petName = petBaseName(petName)
     if eggName == "" or petName == "" then
@@ -1380,7 +1380,7 @@ local function rememberEggPet(eggName, petName)
     end
 end
 
-local function eggSpecificPetRule(rule, entry)
+function eggSpecificPetRule(rule, entry)
     if type(rule) ~= "table" or type(rule.PetRules) ~= "table" then
         return nil, nil
     end
@@ -1394,7 +1394,7 @@ local function eggSpecificPetRule(rule, entry)
     return nil, nil
 end
 
-local function sellPetEntry(entry)
+function sellPetEntry(entry)
     local variants = {}
     if entry.Uuid then
         variants[#variants + 1] = {entry.Uuid}
@@ -1411,7 +1411,7 @@ local function sellPetEntry(entry)
     return fired
 end
 
-local function processNewlyHatchedPets(previousKeys, eggName)
+function processNewlyHatchedPets(previousKeys, eggName)
     refreshInventory()
     local kept = 0
     local sold = 0
@@ -1475,7 +1475,7 @@ local function processNewlyHatchedPets(previousKeys, eggName)
     end
 end
 
-local function farmOwnerText(farm)
+function farmOwnerText(farm)
     local data = farm and farm:FindFirstChild("Important")
     data = data and data:FindFirstChild("Data")
     local owner = data and data:FindFirstChild("Owner")
@@ -1494,7 +1494,7 @@ local function farmOwnerText(farm)
     return nil
 end
 
-local function isOwnFarm(farm)
+function isOwnFarm(farm)
     local owner = farmOwnerText(farm)
     if not owner or owner == "" then
         return false
@@ -1504,7 +1504,7 @@ local function isOwnFarm(farm)
         or owner == tostring(player.UserId)
 end
 
-local function findOwnFarm()
+function findOwnFarm()
     local roots = {
         Workspace:FindFirstChild("Farm"),
         Workspace:FindFirstChild("Farms"),
@@ -1537,12 +1537,12 @@ local function findOwnFarm()
     return nil
 end
 
-local function ownFarmImportant()
+function ownFarmImportant()
     local farm = findOwnFarm()
     return farm and farm:FindFirstChild("Important")
 end
 
-local function eggPlacementArea()
+function eggPlacementArea()
     local important = ownFarmImportant()
     local locations = important and important:FindFirstChild("Plant_Locations")
     if locations then
@@ -1555,7 +1555,7 @@ local function eggPlacementArea()
     return nil
 end
 
-local function placementCFrame(index)
+function placementCFrame(index)
     local area = eggPlacementArea()
     if area then
         local columns = 4
@@ -1679,11 +1679,11 @@ function Actions.OpenSeedPacksOnce()
     log(("Seed pack opener sent %d request(s)."):format(fired))
 end
 
-local function playerGui()
+function playerGui()
     return player:FindFirstChild("PlayerGui")
 end
 
-local function findDescendantByName(root, name)
+function findDescendantByName(root, name)
     if not root then
         return nil
     end
@@ -1698,7 +1698,7 @@ local function findDescendantByName(root, name)
     return nil
 end
 
-local function readProductId(instance)
+function readProductId(instance)
     if not instance then
         return nil
     end
@@ -1721,7 +1721,7 @@ local function readProductId(instance)
     return nil
 end
 
-local function saintPatricksPackProductId()
+function saintPatricksPackProductId()
     local gui = playerGui()
     local shop = gui and gui:FindFirstChild("Shop_UI")
     local pack = shop and findDescendantByName(shop, "SaintPatricksPack")
@@ -1751,7 +1751,7 @@ function Actions.PromptSaintPatricksBundle()
     Actions.PromptProduct("Saint Patrick Bundle", productId)
 end
 
-local function normalizedEggText(value)
+function normalizedEggText(value)
     return tostring(value or "")
         :lower()
         :gsub("%b[]", " ")
@@ -1762,7 +1762,7 @@ local function normalizedEggText(value)
         :gsub("%s+$", "")
 end
 
-local function eggDisplayName(egg)
+function eggDisplayName(egg)
     for _, key in ipairs({"EggName", "PetEggName", "EggType", "Type", "DisplayName", "ItemName"}) do
         local ok, value = pcall(function()
             return egg:GetAttribute(key)
@@ -1782,11 +1782,11 @@ local function eggDisplayName(egg)
     return egg.Name
 end
 
-local function isLikelyEggName(value)
+function isLikelyEggName(value)
     return normalizedEggText(value):find("egg", 1, true) ~= nil
 end
 
-local function petKgText(value, assumeKg)
+function petKgText(value, assumeKg)
     if assumeKg and tonumber(value) then
         return ("%.2f KG"):format(tonumber(value))
     end
@@ -1797,7 +1797,7 @@ local function petKgText(value, assumeKg)
     return nil
 end
 
-local function cleanPredictedPetText(value)
+function cleanPredictedPetText(value)
     local text = tostring(value or "")
         :gsub("[%[%]()]", " ")
         :gsub("%d+%.?%d*%s*[Kk][Gg]", " ")
@@ -1869,7 +1869,7 @@ local function cleanPredictedPetText(value)
     return text
 end
 
-local function eggPredictedPetInfo(egg)
+function eggPredictedPetInfo(egg)
     local keys = {
         "PetName", "PetType", "HatchedPet", "HatchPet", "PredictedPet",
         "ResultPet", "RewardPet", "NextPet", "CurrentPet", "Pet",
@@ -1922,13 +1922,13 @@ local function eggPredictedPetInfo(egg)
     return foundName, foundKg
 end
 
-local function eggMatchesSelection(egg, selected)
+function eggMatchesSelection(egg, selected)
     return hasEggSelection(selected, egg.Name)
         or hasEggSelection(selected, eggDisplayName(egg))
         or hasEggSelection(selected, textOf(egg))
 end
 
-local function readEggField(egg, key)
+function readEggField(egg, key)
     local targetKey = normalizedName(key)
     local function readAttribute(instance, exactOnly)
         local ok, value = pcall(function()
@@ -1993,7 +1993,7 @@ local function readEggField(egg, key)
     return nil
 end
 
-local function readEggFieldAny(egg, keys)
+function readEggFieldAny(egg, keys)
     for _, key in ipairs(keys) do
         local value = readEggField(egg, key)
         if value ~= nil then
@@ -2003,7 +2003,7 @@ local function readEggFieldAny(egg, keys)
     return nil, nil
 end
 
-local function eggWorldPosition(egg)
+function eggWorldPosition(egg)
     if egg:IsA("BasePart") then
         return egg.Position
     end
@@ -2021,7 +2021,7 @@ local function eggWorldPosition(egg)
     return part and part.Position
 end
 
-local function eggSignalKey(egg)
+function eggSignalKey(egg)
     local pos = eggWorldPosition(egg)
     local name = canonicalEggName(eggDisplayName(egg))
     if pos then
@@ -2030,7 +2030,7 @@ local function eggSignalKey(egg)
     return name .. "@" .. egg:GetFullName()
 end
 
-local function durationTextSeconds(text, allowPlain)
+function durationTextSeconds(text, allowPlain)
     local lower = tostring(text or ""):lower()
     if lower:find("stock", 1, true)
         or lower:find("shop", 1, true)
@@ -2080,7 +2080,7 @@ local function durationTextSeconds(text, allowPlain)
     return total
 end
 
-local function eggTimerTextInfo(egg)
+function eggTimerTextInfo(egg)
     local growingReason
     local shortestText
     local shortestSeconds
@@ -2129,7 +2129,7 @@ local function eggTimerTextInfo(egg)
     return nil, nil
 end
 
-local function formatDuration(seconds)
+function formatDuration(seconds)
     seconds = math.max(0, math.floor(tonumber(seconds) or 0))
     local hours = math.floor(seconds / 3600)
     local minutes = math.floor((seconds % 3600) / 60)
@@ -2143,7 +2143,7 @@ local function formatDuration(seconds)
     return tostring(secs) .. "s"
 end
 
-local function eggBooleanValue(value)
+function eggBooleanValue(value)
     if type(value) == "boolean" then
         return value
     end
@@ -2158,7 +2158,7 @@ local function eggBooleanValue(value)
     return nil
 end
 
-local function eggNumericSeconds(value)
+function eggNumericSeconds(value)
     local numeric = tonumber(value)
     if numeric then
         return numeric
@@ -2166,7 +2166,7 @@ local function eggNumericSeconds(value)
     return durationTextSeconds(value, true)
 end
 
-local function normalizeEpochSeconds(value)
+function normalizeEpochSeconds(value)
     value = tonumber(value)
     if not value then
         return nil
@@ -2180,7 +2180,7 @@ local function normalizeEpochSeconds(value)
     return nil
 end
 
-local function normalizeEggProgress(value)
+function normalizeEggProgress(value)
     value = tonumber(value)
     if not value then
         return nil
@@ -2191,7 +2191,7 @@ local function normalizeEggProgress(value)
     return math.clamp(value, 0, 1)
 end
 
-local function progressEta(signal)
+function progressEta(signal)
     if not signal or not signal.Progress or signal.Progress >= 0.999 then
         return nil
     end
@@ -2220,7 +2220,7 @@ local function progressEta(signal)
     return math.max(0, (1 - signal.Progress) / (progressDelta / timeDelta))
 end
 
-local function eggPromptReadyInfo(egg)
+function eggPromptReadyInfo(egg)
     for _, descendant in ipairs(egg:GetDescendants()) do
         if descendant:IsA("ProximityPrompt") then
             local enabled = true
@@ -2245,7 +2245,7 @@ local function eggPromptReadyInfo(egg)
     return nil, nil
 end
 
-local function eggReadyInfo(egg)
+function eggReadyInfo(egg)
     local signal = State.EggSignals[egg] or State.EggSignalKeys[eggSignalKey(egg)]
     local falseReadyReason
 
@@ -2350,12 +2350,12 @@ local function eggReadyInfo(egg)
     return false, "no ready signal"
 end
 
-local function eggReady(egg)
+function eggReady(egg)
     local ready = eggReadyInfo(egg)
     return ready == true
 end
 
-local function eggRoots()
+function eggRoots()
     local roots = {}
     local important = ownFarmImportant()
     local physical = important and important:FindFirstChild("Objects_Physical")
@@ -2373,7 +2373,7 @@ local function eggRoots()
     return roots
 end
 
-local function hasEggAncestor(instance, root)
+function hasEggAncestor(instance, root)
     local parent = instance.Parent
     while parent and parent ~= root do
         if normalizedEggText(parent.Name):find("egg", 1, true) then
@@ -2384,7 +2384,7 @@ local function hasEggAncestor(instance, root)
     return false
 end
 
-local function physicalObjectRoot(instance, searchRoot)
+function physicalObjectRoot(instance, searchRoot)
     local current = instance
     local parent = current and current.Parent
     while parent and parent ~= searchRoot do
@@ -2394,7 +2394,7 @@ local function physicalObjectRoot(instance, searchRoot)
     return current
 end
 
-local function isEggTargetCandidate(instance)
+function isEggTargetCandidate(instance)
     if not instance or not instance.Parent then
         return false
     end
@@ -2415,7 +2415,7 @@ local function isEggTargetCandidate(instance)
     return lower:find("egg", 1, true) ~= nil
 end
 
-local function eggTargetCandidates(selected)
+function eggTargetCandidates(selected)
     local targets = {}
     local seen = {}
     local checked = {}
@@ -2445,7 +2445,7 @@ local function eggTargetCandidates(selected)
     return targets
 end
 
-local function canonicalEggInstance(instance)
+function canonicalEggInstance(instance)
     if typeof(instance) ~= "Instance" then
         return instance
     end
@@ -2460,7 +2460,7 @@ local function canonicalEggInstance(instance)
     return instance
 end
 
-local function revealFromTextBlock(text)
+function revealFromTextBlock(text)
     text = tostring(text or "")
     local lower = text:lower()
     if lower:find("stock", 1, true)
@@ -2487,7 +2487,7 @@ local function revealFromTextBlock(text)
     return foundName, foundKg
 end
 
-local function revealObjectContext(object, text)
+function revealObjectContext(object, text)
     local pieces = {tostring(text or "")}
     local current = object
     local depth = 0
@@ -2499,7 +2499,7 @@ local function revealObjectContext(object, text)
     return normalizedName(table.concat(pieces, " "))
 end
 
-local function contextBlocksEggReveal(context)
+function contextBlocksEggReveal(context)
     return context:find("stock", 1, true)
         or context:find("shop", 1, true)
         or context:find("restock", 1, true)
@@ -2518,7 +2518,7 @@ local function contextBlocksEggReveal(context)
         or context:find("petinventory", 1, true)
 end
 
-local function nearestEggFromInstance(instance)
+function nearestEggFromInstance(instance)
     if typeof(instance) ~= "Instance" then
         return nil
     end
@@ -2530,7 +2530,7 @@ local function nearestEggFromInstance(instance)
     return nil
 end
 
-local function noteEggReveal(egg, petName, petKgLabel, source)
+function noteEggReveal(egg, petName, petKgLabel, source)
     if not petName and not petKgLabel then
         return
     end
@@ -2558,7 +2558,7 @@ local function noteEggReveal(egg, petName, petKgLabel, source)
     end
 end
 
-local function cachedEggReveal(egg)
+function cachedEggReveal(egg)
     local reveal = State.EggReveals[egg] or State.EggRevealKeys[eggSignalKey(egg)]
     if reveal and os.clock() - (reveal.At or 0) <= 3600 then
         return reveal.Name, reveal.Kg
@@ -2568,7 +2568,7 @@ end
 
 local eggEspTargets
 
-local function scanRevealTextObject(object)
+function scanRevealTextObject(object)
     if not object or (
         not object:IsA("TextLabel")
         and not object:IsA("TextButton")
@@ -2624,7 +2624,7 @@ local function scanRevealTextObject(object)
     end
 end
 
-local function hookRevealTextObject(object)
+function hookRevealTextObject(object)
     if not object or State.EggRevealTextConnections[object] then
         return
     end
@@ -2645,7 +2645,7 @@ local function hookRevealTextObject(object)
     end
 end
 
-local function installEggRevealTextHooks()
+function installEggRevealTextHooks()
     for _, root in ipairs(eggRoots()) do
         if not State.EggRevealTextConnections[root] then
             State.EggRevealTextConnections[root] = root.DescendantAdded:Connect(hookRevealTextObject)
@@ -2656,7 +2656,7 @@ local function installEggRevealTextHooks()
     end
 end
 
-local function findReadyEggs()
+function findReadyEggs()
     local selected = Config.Hatch.SelectedEggs
     local found = {}
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -2679,18 +2679,18 @@ local function findReadyEggs()
     return found
 end
 
-local function countPhysicalEggs()
+function countPhysicalEggs()
     return #eggTargetCandidates(nil)
 end
 
-local function hatchEgg(egg)
+function hatchEgg(egg)
     local ok = callRemote("PetEggService", "HatchPet", egg)
     return ok and 1 or 0
 end
 
 local updateEggEsp
 
-local function noteEggSignal(egg, ready, reason, progress)
+function noteEggSignal(egg, ready, reason, progress)
     if typeof(egg) ~= "Instance" then
         return
     end
@@ -2719,7 +2719,7 @@ local function noteEggSignal(egg, ready, reason, progress)
     State.EggSignalKeys[eggSignalKey(egg)] = signal
 end
 
-local function installEggRemoteListeners()
+function installEggRemoteListeners()
     if State.EggRemoteListenersInstalled then
         return
     end
@@ -2748,7 +2748,7 @@ local function installEggRemoteListeners()
     end
 end
 
-local function remoteStatus(name)
+function remoteStatus(name)
     local r = remote(name)
     if not r then
         return name .. ": missing"
@@ -2763,7 +2763,7 @@ function Actions.LogEggRemoteStatus()
     log(("Own farm egg roots: %d"):format(#eggRoots()))
 end
 
-local function eggAdornee(egg)
+function eggAdornee(egg)
     if egg:IsA("BasePart") then
         return egg
     end
@@ -2773,7 +2773,7 @@ local function eggAdornee(egg)
     return egg:FindFirstChildWhichIsA("BasePart", true)
 end
 
-local function clearEggEsp()
+function clearEggEsp()
     for egg, adornments in pairs(State.EggEsp) do
         if adornments.Billboard then
             adornments.Billboard:Destroy()
@@ -2923,7 +2923,7 @@ function updateEggEsp()
     end
 end
 
-local function runPetTeam(selected, label)
+function runPetTeam(selected, label)
     local fired = 0
     for _, entry in ipairs(selectedEntries("Pets", selected)) do
         if entry.Uuid then
@@ -3074,7 +3074,7 @@ function Actions.KgBoostPetsOnce()
     log(("KG boost pets sent %d request(s)."):format(fired))
 end
 
-local function callPetPlacement(entry)
+function callPetPlacement(entry)
     if not entry then
         return 0
     end
@@ -3354,7 +3354,7 @@ content.Parent = window
 corner(content, 10)
 stroke(content)
 
-local function page(name)
+function page(name)
     local p = Instance.new("ScrollingFrame")
     p.Name = name .. "Page"
     p.BackgroundTransparency = 1
@@ -3377,7 +3377,7 @@ local function page(name)
     return p
 end
 
-local function switch(name)
+function switch(name)
     State.ActiveTab = name
     for pageName, p in pairs(pages) do
         p.Visible = pageName == name
@@ -3396,7 +3396,7 @@ local function switch(name)
     end
 end
 
-local function navButton(name, order, description)
+function navButton(name, order, description)
     local b = Instance.new("TextButton")
     b.Name = name .. "Tab"
     b.LayoutOrder = order
@@ -3441,7 +3441,7 @@ local function navButton(name, order, description)
     navButtons[name] = b
 end
 
-local function section(parent, name)
+function section(parent, name)
     local s = Instance.new("Frame")
     s.Name = name:gsub("%s+", "") .. "Section"
     s.Size = UDim2.new(1, -4, 0, 10)
@@ -3484,7 +3484,7 @@ local function section(parent, name)
     return s
 end
 
-local function row(parent, height)
+function row(parent, height)
     local r = Instance.new("Frame")
     r.Size = UDim2.new(1, 0, 0, height or 46)
     r.BackgroundColor3 = Theme.Panel2
@@ -3496,7 +3496,7 @@ local function row(parent, height)
     return r
 end
 
-local function button(parent, text, callback)
+function button(parent, text, callback)
     local b = Instance.new("TextButton")
     b.Size = UDim2.new(1, 0, 0, 40)
     b.BackgroundColor3 = Theme.Accent2
@@ -3514,7 +3514,7 @@ local function button(parent, text, callback)
     return b
 end
 
-local function toggle(parent, text, value, callback)
+function toggle(parent, text, value, callback)
     local r = row(parent, 46)
     local label = Instance.new("TextLabel")
     label.BackgroundTransparency = 1
@@ -3557,7 +3557,7 @@ local function toggle(parent, text, value, callback)
     render(false)
 end
 
-local function input(parent, text, default, callback)
+function input(parent, text, default, callback)
     local r = row(parent, 46)
     local label = Instance.new("TextLabel")
     label.BackgroundTransparency = 1
@@ -3592,7 +3592,7 @@ local function input(parent, text, default, callback)
     end)
 end
 
-local function multiselect(parent, text, optionGetter, selected, callback)
+function multiselect(parent, text, optionGetter, selected, callback)
     local container = Instance.new("Frame")
     container.BackgroundTransparency = 1
     container.Size = UDim2.new(1, 0, 0, 42)
@@ -3751,7 +3751,7 @@ local function multiselect(parent, text, optionGetter, selected, callback)
     rebuild()
 end
 
-local function eggPetRuleEditor(parent)
+function eggPetRuleEditor(parent)
     local container = Instance.new("Frame")
     container.BackgroundTransparency = 1
     container.Size = UDim2.new(1, 0, 0, 10)
@@ -3897,7 +3897,7 @@ local function eggPetRuleEditor(parent)
     rebuild()
 end
 
-local function refreshUiControls()
+function refreshUiControls()
     for _, refresh in pairs(refreshers) do
         pcall(refresh)
     end
@@ -4151,7 +4151,7 @@ if backpack then
     backpack.ChildRemoved:Connect(function() task.delay(0.2, refreshInventory) end)
 end
 
-local function tickAction(key, interval, busyKey, callback)
+function tickAction(key, interval, busyKey, callback)
     local now = os.clock()
     State.Last[key] = State.Last[key] or 0
     if State.Busy[busyKey] or now - State.Last[key] < interval then
